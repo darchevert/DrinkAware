@@ -161,6 +161,7 @@ export function PulseView({ children, duration = 1000 }: PulseViewProps) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // Important: ne pas forcer flex:1 pour éviter l'étirement des wrappers
+    // qui ajoute des espaces entre les cards sur le web (RNW génère r-flex-*).
   },
 });
