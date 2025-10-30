@@ -165,7 +165,9 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
         <View style={styles.elapsedBarBg}>
           <Animated.View style={[styles.elapsedBarFill, { backgroundColor: color, width }]} />
           <View style={styles.elapsedTextWrap}>
-            <Text style={styles.elapsedValue}>{value} {label}</Text>
+            <View style={styles.elapsedLabel}>
+              <Text style={styles.elapsedValue}>{value} {label}</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -193,10 +195,10 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
         {/* Elapsed timer style I Am Sober */}
         <View style={styles.elapsedCard}>
           <Text style={styles.sectionTitle}>Temps depuis la dernière consommation</Text>
-          {renderElapsedRow('days', 'jours', elapsed.days, barAnim.days, '#1dd1a1')}
-          {renderElapsedRow('hours', 'heures', elapsed.hours, barAnim.hours, '#48dbfb')}
-          {renderElapsedRow('minutes', 'minutes', elapsed.minutes, barAnim.minutes, '#54a0ff')}
-          {renderElapsedRow('seconds', 'secondes', elapsed.seconds, barAnim.seconds, '#5f27cd')}
+          {renderElapsedRow('days', 'jours', elapsed.days, barAnim.days, '#4CAF50')}
+          {renderElapsedRow('hours', 'heures', elapsed.hours, barAnim.hours, '#2196F3')}
+          {renderElapsedRow('minutes', 'minutes', elapsed.minutes, barAnim.minutes, '#26C6DA')}
+          {renderElapsedRow('seconds', 'secondes', elapsed.seconds, barAnim.seconds, '#9C27B0')}
         </View>
 
         {/* Statistiques détaillées */}
@@ -410,6 +412,17 @@ const styles = StyleSheet.create({
     color: '#333',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  elapsedLabel: {
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
   },
   sectionTitle: {
     fontSize: 20,
