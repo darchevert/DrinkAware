@@ -110,16 +110,35 @@ export class StorageService {
         checkIndex = allChecks.length - 1;
       }
 
-      // Compter la série actuelle en remontant dans le temps
-      for (let i = checkIndex; i >= 0; i--) {
-        if (allChecks[i] && allChecks[i].sober) {
-          currentStreak += 1;
-          lastCheckDate = allChecks[i].date;
+      // Compter la série actuelle en exigeant des jours consécutifs (gère les trous du calendrier)
+      if (allChecks.length > 0) {
+        const byDate: Record<string, any> = {};
+        for (const c of allChecks) byDate[c.date] = c;
+
+        // point de départ: aujourd'hui si entré, sinon dernière date en base
+        const startDateForStreak = checkIndex >= 0 ? allChecks[checkIndex].date : allChecks[allChecks.length - 1].date;
+        let cursor = new Date(startDateForStreak);
+
+        // si le jour de départ n'est pas sobre -> streak 0
+        const startKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+        if (!byDate[startKey] || !byDate[startKey].sober) {
+          currentStreak = 0;
         } else {
-          if (allChecks[i] && allChecks[i].date === todayStr) {
-            currentStreak = 0;
+          // Remonter jour par jour
+          currentStreak = 1;
+          lastCheckDate = startKey;
+          while (true) {
+            const prev = new Date(cursor);
+            prev.setDate(prev.getDate() - 1);
+            const key = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
+            if (byDate[key] && byDate[key].sober) {
+              currentStreak += 1;
+              lastCheckDate = key;
+              cursor = prev;
+            } else {
+              break;
+            }
           }
-          break;
         }
       }
 
@@ -145,17 +164,8 @@ export class StorageService {
           let endIndex = allChecks.findIndex((c: any) => c.date === todayStr);
           if (endIndex === -1) endIndex = allChecks.length - 1;
 
-          // Remonter jusqu'au début de la série actuelle
-          let startIndex = endIndex;
-          for (let i = endIndex; i >= 0; i--) {
-            if (allChecks[i].sober) {
-              startIndex = i;
-            } else {
-              break;
-            }
-          }
-
-          const startDateObj = new Date(allChecks[startIndex].date);
+          // Début de la série actuelle = lastCheckDate calculé ci-dessus
+          const startDateObj = new Date(lastCheckDate || allChecks[endIndex].date);
           const startOfDay = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate(), 0, 0, 0, 0);
           const computedStartIso = startOfDay.toISOString();
 
