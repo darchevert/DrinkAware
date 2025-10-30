@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 
 // Service de notifications simplifié qui fonctionne sur toutes les plateformes
 export class NotificationService {
@@ -17,8 +18,13 @@ export class NotificationService {
       return false;
     }
     
-    // Sur mobile, retourner true par défaut pour éviter les erreurs
-    return true;
+    // Mobile: demander les permissions via Expo Notifications
+    const settings = await Notifications.getPermissionsAsync();
+    if (settings.granted || settings.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) {
+      return true;
+    }
+    const request = await Notifications.requestPermissionsAsync();
+    return request.granted || request.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
   }
 
   // Programmer une notification quotidienne à une heure donnée (heure/minute en locale)
@@ -34,9 +40,30 @@ export class NotificationService {
           console.log(`Notification quotidienne programmée pour ${hh}:${mm}`);
         }
       } else {
-        const hh = String(hour).padStart(2, '0');
-        const mm = String(minute).padStart(2, '0');
-        console.log(`Notifications programmées pour la plateforme mobile à ${hh}:${mm}`);
+        // Android: s'assurer qu'un canal existe
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('daily-reminder', {
+            name: 'Rappel quotidien',
+            importance: Notifications.AndroidImportance.DEFAULT,
+          });
+        }
+
+        // Annuler les rappel(s) existant(s) et programmer le nouveau
+        const all = await Notifications.getAllScheduledNotificationsAsync();
+        await Promise.all(all.map(n => Notifications.cancelScheduledNotificationAsync(n.identifier)));
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Vérification quotidienne',
+            body: "N'oubliez pas de faire votre vérification d'aujourd'hui.",
+          },
+          trigger: {
+            hour,
+            minute,
+            repeats: true,
+            channelId: Platform.OS === 'android' ? 'daily-reminder' : undefined,
+          } as any,
+        });
       }
     } catch (error) {
       console.error('Erreur lors de la programmation de la notification:', error);
@@ -98,6 +125,7 @@ export class NotificationService {
       if (Platform.OS === 'web') {
         console.log('Notifications annulées');
       } else {
+        await Notifications.cancelAllScheduledNotificationsAsync();
         console.log('Toutes les notifications ont été annulées');
       }
     } catch (error) {
@@ -125,7 +153,7 @@ export class NotificationService {
       const hasPermission = await this.requestPermissions();
       
       if (hasPermission) {
-        await this.scheduleDailyNotification();
+        // Ne programme pas d'heure par défaut ici; Settings l'initialise
         console.log('Service de notifications initialisé');
         return true;
       }
