@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +20,13 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
   const [sobrietyData, setSobrietyData] = useState<SobrietyData | null>(null);
   const [dailyChecks, setDailyChecks] = useState<DailyCheck[]>([]);
   const [loading, setLoading] = useState(true);
+  const [elapsed, setElapsed] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const barAnim = {
+    days: useRef(new Animated.Value(0)).current,
+    hours: useRef(new Animated.Value(0)).current,
+    minutes: useRef(new Animated.Value(0)).current,
+    seconds: useRef(new Animated.Value(0)).current,
+  };
 
   useEffect(() => {
     loadData();
@@ -47,6 +55,30 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
       setLoading(false);
     }
   };
+
+  // Calcul en continu du temps écoulé depuis startDate
+  useEffect(() => {
+    if (!sobrietyData?.startDate) return;
+    const start = new Date(sobrietyData.startDate).getTime();
+    const tick = () => {
+      const diffMs = Math.max(0, Date.now() - start);
+      const totalSeconds = Math.floor(diffMs / 1000);
+      const days = Math.floor(totalSeconds / 86400);
+      const hours = Math.floor((totalSeconds % 86400) / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      setElapsed({ days, hours, minutes, seconds });
+
+      // Mettre à jour l'animation des barres (normalisation simple)
+      Animated.timing(barAnim.days, { toValue: Math.min(1, days / 30), duration: 300, useNativeDriver: false }).start();
+      Animated.timing(barAnim.hours, { toValue: hours / 24, duration: 300, useNativeDriver: false }).start();
+      Animated.timing(barAnim.minutes, { toValue: minutes / 60, duration: 300, useNativeDriver: false }).start();
+      Animated.timing(barAnim.seconds, { toValue: seconds / 60, duration: 300, useNativeDriver: false }).start();
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [sobrietyData?.startDate]);
 
   const getStreakStats = () => {
     if (!dailyChecks.length) return { longestStreak: 0, averageStreak: 0 };
@@ -120,6 +152,23 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
   const weeklyStats = getWeeklyStats();
   const monthlyStats = getMonthlyStats();
 
+  const renderElapsedRow = (
+    key: string,
+    label: string,
+    value: number,
+    anim: Animated.Value,
+    color: string,
+  ) => {
+    const width = anim.interpolate({ inputRange: [0, 1], outputRange: ['10%', '100%'] });
+    return (
+      <View key={key} style={styles.elapsedRow}>
+        <Animated.View style={[styles.elapsedBar, { backgroundColor: color, width }]}>
+          <Text style={styles.elapsedValue}>{value} {label}</Text>
+        </Animated.View>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -136,6 +185,15 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
             <Text style={styles.statNumber}>{sobrietyData.totalDays}</Text>
             <Text style={styles.statLabel}>Total jours</Text>
           </View>
+        </View>
+
+        {/* Elapsed timer style I Am Sober */}
+        <View style={styles.elapsedCard}>
+          <Text style={styles.sectionTitle}>Temps depuis la dernière consommation</Text>
+          {renderElapsedRow('days', 'jours', elapsed.days, barAnim.days, '#1dd1a1')}
+          {renderElapsedRow('hours', 'heures', elapsed.hours, barAnim.hours, '#48dbfb')}
+          {renderElapsedRow('minutes', 'minutes', elapsed.minutes, barAnim.minutes, '#54a0ff')}
+          {renderElapsedRow('seconds', 'secondes', elapsed.seconds, barAnim.seconds, '#5f27cd')}
         </View>
 
         {/* Statistiques détaillées */}
@@ -305,6 +363,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  elapsedCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 15,
+    padding: 16,
+    marginBottom: 20,
+  },
+  elapsedRow: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    marginVertical: 6,
+    overflow: 'hidden',
+  },
+  elapsedBar: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  elapsedValue: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   sectionTitle: {
     fontSize: 20,

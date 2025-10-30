@@ -122,6 +122,13 @@ export default function DailyCheckScreen({ navigation }: DailyCheckScreenProps) 
       };
 
       // Ne plus modifier les compteurs localement; le recalcul central fera foi
+      // Si consommation aujourd'hui, enregistrer aussi l'heure précise comme nouveau départ
+      if (!sober) {
+        const nowIso = new Date().toISOString();
+        if (sobrietyData) {
+          sobrietyData.startDate = nowIso;
+        }
+      }
 
       // Sauvegarder la vérification
       await StorageService.saveDailyCheck(dailyCheck);
