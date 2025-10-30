@@ -135,30 +135,40 @@ export class StorageService {
         lastCheckDate,
       };
 
-      // Mettre à jour startDate en fonction de la dernière consommation si besoin
+      // Mettre à jour startDate sur le début de la série actuelle (00:00 du jour de départ)
       try {
-        const latestConsumed = [...allChecks]
-          .filter((c: any) => !c.sober)
-          .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-        if (latestConsumed) {
-          const latestDate = new Date(latestConsumed.date);
-          const endOfDay = new Date(latestDate.getFullYear(), latestDate.getMonth(), latestDate.getDate(), 23, 59, 59, 999);
-          const computedStartIso = endOfDay.toISOString();
-
+        if (currentStreak > 0 && allChecks.length > 0) {
           const today = new Date();
           const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-          // Si la dernière consommation n'est pas aujourd'hui, harmoniser startDate
-          if (latestConsumed.date !== todayStr) {
-            if (!updatedData.startDate || new Date(updatedData.startDate).getTime() < new Date(computedStartIso).getTime()) {
-              updatedData.startDate = computedStartIso;
+          // Trouver l'index du dernier jour pris en compte (aujourd'hui si présent, sinon le dernier en base)
+          let endIndex = allChecks.findIndex((c: any) => c.date === todayStr);
+          if (endIndex === -1) endIndex = allChecks.length - 1;
+
+          // Remonter jusqu'au début de la série actuelle
+          let startIndex = endIndex;
+          for (let i = endIndex; i >= 0; i--) {
+            if (allChecks[i].sober) {
+              startIndex = i;
+            } else {
+              break;
             }
           }
-          // Si c'est aujourd'hui, on conserve la précision (startDate déjà mis à "maintenant" par DailyCheck)
+
+          const startDateObj = new Date(allChecks[startIndex].date);
+          const startOfDay = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate(), 0, 0, 0, 0);
+          const computedStartIso = startOfDay.toISOString();
+
+          // Si une consommation a été enregistrée aujourd'hui, on garde la précision déjà stockée
+          const hasConsumptionToday = allChecks.some((c: any) => c.date === todayStr && !c.sober);
+
+          if (!hasConsumptionToday) {
+            // Toujours aligner sur le début de la série actuelle, même après une réinitialisation manuelle
+            updatedData.startDate = computedStartIso;
+          }
         }
       } catch (e) {
-        // En cas d'anomalie, ne pas bloquer le recalcul
-        console.warn('Recalculate: mise à jour startDate ignorée:', e);
+        console.warn('Recalculate: mise à jour startDate (début série) ignorée:', e);
       }
 
       // Mettre à jour les jalons
