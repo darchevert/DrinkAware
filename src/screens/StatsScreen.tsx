@@ -42,6 +42,8 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
 
   const loadData = async () => {
     try {
+      // Toujours recalculer avant de lire pour garantir la cohérence (startDate/streak)
+      await StorageService.recalculateStatistics();
       const data = await StorageService.loadSobrietyData();
       const checks = await StorageService.loadDailyChecks();
       
