@@ -159,12 +159,15 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
     anim: Animated.Value,
     color: string,
   ) => {
-    const width = anim.interpolate({ inputRange: [0, 1], outputRange: ['10%', '100%'] });
+    const width = anim.interpolate({ inputRange: [0, 1], outputRange: ['6%', '100%'] });
     return (
       <View key={key} style={styles.elapsedRow}>
-        <Animated.View style={[styles.elapsedBar, { backgroundColor: color, width }]}>
-          <Text style={styles.elapsedValue}>{value} {label}</Text>
-        </Animated.View>
+        <View style={styles.elapsedBarBg}>
+          <Animated.View style={[styles.elapsedBarFill, { backgroundColor: color, width }]} />
+          <View style={styles.elapsedTextWrap}>
+            <Text style={styles.elapsedValue}>{value} {label}</Text>
+          </View>
+        </View>
       </View>
     );
   };
@@ -365,25 +368,46 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   elapsedCard: {
-    backgroundColor: '#0f172a',
+    backgroundColor: '#fff',
     borderRadius: 15,
     padding: 16,
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   elapsedRow: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 12,
     marginVertical: 6,
-    overflow: 'hidden',
   },
-  elapsedBar: {
-    paddingVertical: 10,
+  elapsedBarBg: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 12,
+    height: 42,
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  elapsedBarFill: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+  },
+  elapsedTextWrap: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 14,
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   elapsedValue: {
-    color: '#fff',
+    color: '#333',
     fontSize: 16,
     fontWeight: 'bold',
   },
