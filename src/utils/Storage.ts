@@ -135,6 +135,32 @@ export class StorageService {
         lastCheckDate,
       };
 
+      // Mettre à jour startDate en fonction de la dernière consommation si besoin
+      try {
+        const latestConsumed = [...allChecks]
+          .filter((c: any) => !c.sober)
+          .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+        if (latestConsumed) {
+          const latestDate = new Date(latestConsumed.date);
+          const endOfDay = new Date(latestDate.getFullYear(), latestDate.getMonth(), latestDate.getDate(), 23, 59, 59, 999);
+          const computedStartIso = endOfDay.toISOString();
+
+          const today = new Date();
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+          // Si la dernière consommation n'est pas aujourd'hui, harmoniser startDate
+          if (latestConsumed.date !== todayStr) {
+            if (!updatedData.startDate || new Date(updatedData.startDate).getTime() < new Date(computedStartIso).getTime()) {
+              updatedData.startDate = computedStartIso;
+            }
+          }
+          // Si c'est aujourd'hui, on conserve la précision (startDate déjà mis à "maintenant" par DailyCheck)
+        }
+      } catch (e) {
+        // En cas d'anomalie, ne pas bloquer le recalcul
+        console.warn('Recalculate: mise à jour startDate ignorée:', e);
+      }
+
       // Mettre à jour les jalons
       if (Array.isArray(updatedData.milestones)) {
         updatedData.milestones = updatedData.milestones.map((m: any) => {
