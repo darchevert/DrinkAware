@@ -5,6 +5,8 @@ import {
   StyleSheet,
   ScrollView,
   Animated,
+  TouchableOpacity,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +23,9 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
   const [dailyChecks, setDailyChecks] = useState<DailyCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [elapsed, setElapsed] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [adjustHour, setAdjustHour] = useState<number>(0);
+  const [adjustMinute, setAdjustMinute] = useState<number>(0);
   const barAnim = {
     days: useRef(new Animated.Value(0)).current,
     hours: useRef(new Animated.Value(0)).current,
@@ -62,6 +67,9 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
   useEffect(() => {
     if (!sobrietyData?.startDate) return;
     const start = new Date(sobrietyData.startDate).getTime();
+    const d = new Date(sobrietyData.startDate);
+    setAdjustHour(d.getHours());
+    setAdjustMinute(d.getMinutes());
     const tick = () => {
       const diffMs = Math.max(0, Date.now() - start);
       const totalSeconds = Math.floor(diffMs / 1000);
@@ -194,7 +202,12 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
 
         {/* Elapsed timer style I Am Sober */}
         <View style={styles.elapsedCard}>
-          <Text style={styles.sectionTitle}>Temps depuis la dernière consommation</Text>
+          <View style={styles.elapsedHeader}>
+            <Text style={styles.sectionTitle}>Temps depuis la dernière consommation</Text>
+            <TouchableOpacity style={styles.iconButton} onPress={() => setShowAdjustModal(true)}>
+              <Ionicons name="time" size={18} color="#666" />
+            </TouchableOpacity>
+          </View>
           {renderElapsedRow('days', 'jours', elapsed.days, barAnim.days, '#A5D6A7')}
           {renderElapsedRow('hours', 'heures', elapsed.hours, barAnim.hours, '#90CAF9')}
           {renderElapsedRow('minutes', 'minutes', elapsed.minutes, barAnim.minutes, '#80DEEA')}
@@ -297,6 +310,63 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
           )}
         </View>
       </ScrollView>
+
+      {/* Modal d'ajustement de l'heure de début */}
+      <Modal
+        visible={showAdjustModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAdjustModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Ajuster l'heure de début</Text>
+            <Text style={styles.modalText}>Modifie l'heure de la dernière consommation (le jour reste inchangé).</Text>
+            <View style={styles.timePickerRow}>
+              <View style={styles.timeCol}>
+                <Text style={styles.timeLabel}>Heure</Text>
+                <View style={styles.stepperRow}>
+                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setAdjustHour(h => (h + 23) % 24)}>
+                    <Ionicons name="chevron-down" size={20} color="#333" />
+                  </TouchableOpacity>
+                  <Text style={styles.timeValue}>{String(adjustHour).padStart(2, '0')}</Text>
+                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setAdjustHour(h => (h + 1) % 24)}>
+                    <Ionicons name="chevron-up" size={20} color="#333" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={styles.timeCol}>
+                <Text style={styles.timeLabel}>Minutes</Text>
+                <View style={styles.stepperRow}>
+                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setAdjustMinute(m => (m + 59) % 60)}>
+                    <Ionicons name="chevron-down" size={20} color="#333" />
+                  </TouchableOpacity>
+                  <Text style={styles.timeValue}>{String(adjustMinute).padStart(2, '0')}</Text>
+                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setAdjustMinute(m => (m + 1) % 60)}>
+                    <Ionicons name="chevron-up" size={20} color="#333" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setShowAdjustModal(false)}>
+                <Text style={styles.cancelButtonText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.resetButton]} onPress={async () => {
+                if (!sobrietyData?.startDate) return;
+                const d = new Date(sobrietyData.startDate);
+                d.setHours(adjustHour, adjustMinute, 0, 0);
+                const newData = { ...sobrietyData, startDate: d.toISOString() } as any;
+                await StorageService.saveSobrietyData(newData);
+                setSobrietyData(newData);
+                setShowAdjustModal(false);
+              }}>
+                <Text style={styles.resetButtonText}>Enregistrer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -380,6 +450,20 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  elapsedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  iconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f2f2f2',
+  },
   elapsedRow: {
     borderRadius: 12,
     marginVertical: 6,
@@ -412,6 +496,94 @@ const styles = StyleSheet.create({
     color: '#333',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    margin: 20,
+    minWidth: 300,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  modalText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+  },
+  timePickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 10,
+  },
+  timeCol: {
+    alignItems: 'center',
+    padding: 10,
+  },
+  timeLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 6,
+  },
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepperBtn: {
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 6,
+    backgroundColor: '#f9f9f9',
+  },
+  timeValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    width: 40,
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginHorizontal: 5,
+  },
+  cancelButton: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  resetButton: {
+    backgroundColor: '#4CAF50',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  resetButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 20,
