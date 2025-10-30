@@ -21,18 +21,22 @@ export class NotificationService {
     return true;
   }
 
-  // Programmer une notification quotidienne
-  static async scheduleDailyNotification(): Promise<void> {
+  // Programmer une notification quotidienne à une heure donnée (heure/minute en locale)
+  static async scheduleDailyNotification(hour: number = 20, minute: number = 0): Promise<void> {
     try {
       if (Platform.OS === 'web') {
         // Sur le web, programmer une notification simple
         if ('Notification' in window && Notification.permission === 'granted') {
           // Note: Les notifications web programmées nécessitent un service worker
-          // Pour l'instant, on affiche juste un message dans la console
-          console.log('Notification quotidienne programmée pour 20h');
+          // Ici, on journalise l'horaire configuré
+          const hh = String(hour).padStart(2, '0');
+          const mm = String(minute).padStart(2, '0');
+          console.log(`Notification quotidienne programmée pour ${hh}:${mm}`);
         }
       } else {
-        console.log('Notifications programmées pour la plateforme mobile');
+        const hh = String(hour).padStart(2, '0');
+        const mm = String(minute).padStart(2, '0');
+        console.log(`Notifications programmées pour la plateforme mobile à ${hh}:${mm}`);
       }
     } catch (error) {
       console.error('Erreur lors de la programmation de la notification:', error);

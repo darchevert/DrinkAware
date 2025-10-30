@@ -25,6 +25,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const [characterState, setCharacterState] = useState<CharacterState | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [reminderHour, setReminderHour] = useState<number>(20);
+  const [reminderMinute, setReminderMinute] = useState<number>(0);
+  const [showTimeModal, setShowTimeModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
 
   useEffect(() => {
@@ -36,6 +39,18 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       const character = await StorageService.loadCharacterState();
       if (character) {
         setCharacterState(character);
+      }
+
+      // Charger paramètres notifications
+      const enabled = await AsyncStorage.getItem('notifications_enabled');
+      const time = await AsyncStorage.getItem('daily_reminder_time');
+      if (enabled !== null) setNotificationsEnabled(enabled === 'true');
+      if (time) {
+        const [h, m] = time.split(':').map(Number);
+        if (!Number.isNaN(h) && !Number.isNaN(m)) {
+          setReminderHour(h);
+          setReminderMinute(m);
+        }
       }
     } catch (error) {
       console.error('Erreur lors du chargement des données:', error);
@@ -66,10 +81,30 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     setNotificationsEnabled(enabled);
     
     if (enabled) {
-      await NotificationService.scheduleDailyNotification();
+      await AsyncStorage.setItem('notifications_enabled', 'true');
+      await AsyncStorage.setItem('daily_reminder_time', `${String(reminderHour).padStart(2,'0')}:${String(reminderMinute).padStart(2,'0')}`);
+      await NotificationService.scheduleDailyNotification(reminderHour, reminderMinute);
     } else {
+      await AsyncStorage.setItem('notifications_enabled', 'false');
       await NotificationService.cancelAllNotifications();
     }
+  };
+
+  const openTimePicker = () => {
+    setShowTimeModal(true);
+  };
+
+  const closeTimePicker = () => {
+    setShowTimeModal(false);
+  };
+
+  const saveTime = async () => {
+    await AsyncStorage.setItem('daily_reminder_time', `${String(reminderHour).padStart(2,'0')}:${String(reminderMinute).padStart(2,'0')}`);
+    if (notificationsEnabled) {
+      await NotificationService.cancelAllNotifications();
+      await NotificationService.scheduleDailyNotification(reminderHour, reminderMinute);
+    }
+    setShowTimeModal(false);
   };
 
   const handleResetData = () => {
@@ -217,6 +252,17 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                 thumbColor={notificationsEnabled ? '#fff' : '#f4f3f4'}
               />
             </View>
+
+            {/* Sélection de l'heure */}
+            <TouchableOpacity style={styles.settingRow} onPress={openTimePicker} disabled={!notificationsEnabled}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Heure du rappel</Text>
+                <Text style={styles.settingDescription}>
+                  {`${String(reminderHour).padStart(2,'0')}:${String(reminderMinute).padStart(2,'0')}`}
+                </Text>
+              </View>
+              <Ionicons name="time" size={22} color={notificationsEnabled ? '#4CAF50' : '#ccc'} />
+            </TouchableOpacity>
           </View>
 
           {/* Actions */}
@@ -270,6 +316,54 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                 onPress={confirmReset}
               >
                 <Text style={styles.resetButtonText}>Réinitialiser</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal choix de l'heure */}
+      <Modal
+        visible={showTimeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeTimePicker}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Choisir l'heure du rappel</Text>
+            <View style={styles.timePickerRow}>
+              <View style={styles.timeCol}>
+                <Text style={styles.timeLabel}>Heure</Text>
+                <View style={styles.stepperRow}>
+                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setReminderHour((h)=> (h+23)%24)}>
+                    <Ionicons name="chevron-down" size={20} color="#333" />
+                  </TouchableOpacity>
+                  <Text style={styles.timeValue}>{String(reminderHour).padStart(2,'0')}</Text>
+                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setReminderHour((h)=> (h+1)%24)}>
+                    <Ionicons name="chevron-up" size={20} color="#333" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={styles.timeCol}>
+                <Text style={styles.timeLabel}>Minutes</Text>
+                <View style={styles.stepperRow}>
+                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setReminderMinute((m)=> (m+59)%60)}>
+                    <Ionicons name="chevron-down" size={20} color="#333" />
+                  </TouchableOpacity>
+                  <Text style={styles.timeValue}>{String(reminderMinute).padStart(2,'0')}</Text>
+                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setReminderMinute((m)=> (m+1)%60)}>
+                    <Ionicons name="chevron-up" size={20} color="#333" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={closeTimePicker}>
+                <Text style={styles.cancelButtonText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.resetButton]} onPress={saveTime}>
+                <Text style={styles.resetButtonText}>Enregistrer</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -457,4 +551,37 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  timePickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 10,
+  },
+  timeCol: {
+    alignItems: 'center',
+    padding: 10,
+  },
+  timeLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 6,
+  },
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepperBtn: {
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 6,
+    backgroundColor: '#f9f9f9',
+  },
+  timeValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    width: 40,
+    textAlign: 'center',
+  },
 });
+
