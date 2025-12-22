@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { translations, SupportedLanguage } from '../i18n/translations';
 
 // Service de notifications simplifié qui fonctionne sur toutes les plateformes
 export class NotificationService {
@@ -52,61 +54,100 @@ export class NotificationService {
         const all = await Notifications.getAllScheduledNotificationsAsync();
         await Promise.all(all.map(n => Notifications.cancelScheduledNotificationAsync(n.identifier)));
 
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'Vérification quotidienne',
-            body: "N'oubliez pas de faire votre vérification d'aujourd'hui.",
-          },
-          trigger: {
-            hour,
-            minute,
-            repeats: true,
-            channelId: Platform.OS === 'android' ? 'daily-reminder' : undefined,
-          } as any,
-        });
+        // Calculer la prochaine occurrence de l'heure programmée
+        const now = new Date();
+        const targetTime = new Date();
+        // Utiliser setHours avec l'heure locale pour garantir la précision
+        targetTime.setHours(Number(hour), Number(minute), 0, 0);
+        targetTime.setMilliseconds(0);
+
+        // Si l'heure programmée est déjà passée aujourd'hui, programmer pour demain à la même heure
+        // Utiliser une marge de sécurité de 5 secondes pour éviter le déclenchement immédiat
+        // si l'utilisateur programme exactement à l'heure actuelle
+        const safetyMargin = 5 * 1000; // 5 secondes en millisecondes
+        const isTimePassed = targetTime.getTime() <= now.getTime() + safetyMargin;
+        
+        if (isTimePassed) {
+          // Si l'heure est passée, programmer pour demain à la même heure
+          targetTime.setDate(targetTime.getDate() + 1);
+        }
+
+        const title = await NotificationService.getDailyTitle();
+        const body = await NotificationService.getDailyBody();
+
+        // Programmer UNE SEULE notification pour la prochaine occurrence de l'heure
+        // La notification sera reprogrammée après chaque déclenchement via le listener
+        console.log(`[Notifications] Programmation d'une notification pour: ${targetTime.toLocaleString('fr-FR')} (${hour}:${String(minute).padStart(2, '0')})`);
+        
+        try {
+          // S'assurer que la date est bien formatée pour le trigger
+          // Le trigger attend un objet Date
+          const triggerDate = new Date(targetTime);
+          
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title,
+              body,
+            },
+            trigger: {
+              date: triggerDate,
+              channelId: Platform.OS === 'android' ? 'daily-reminder' : undefined,
+            },
+          });
+          
+          console.log(`[Notifications] Notification programmée avec succès pour: ${triggerDate.toLocaleString('fr-FR')} (heure choisie: ${hour}:${String(minute).padStart(2, '0')}, maintenant: ${now.toLocaleString('fr-FR')})`);
+        } catch (error) {
+          console.error(`[Notifications] Erreur lors de la programmation de la notification:`, error);
+        }
       }
     } catch (error) {
       console.error('Erreur lors de la programmation de la notification:', error);
     }
   }
 
-  // Programmer une notification de félicitations pour un jalon
+  // Programmer une notification de félicitations pour un challenge
   static async scheduleMilestoneNotification(milestoneName: string, days: number): Promise<void> {
     try {
       if (Platform.OS === 'web') {
         if ('Notification' in window && Notification.permission === 'granted') {
           new Notification('🎉 Félicitations !', {
-            body: `Vous avez atteint le jalon "${milestoneName}" avec ${days} jours de sobriété ! Continuez comme ça !`,
+            body: `Vous avez atteint le challenge "${milestoneName}" avec ${days} jours de sobriété ! Continuez comme ça !`,
             icon: '/favicon.png',
           });
         }
       } else {
-        console.log(`Jalon atteint: ${milestoneName} (${days} jours)`);
+        // Mobile: envoyer une notification immédiate
+        const lang = await this.getLang();
+        const title = translations[lang].notifications.milestoneTitle || '🎉 Félicitations !';
+        const body = (translations[lang].notifications.milestoneBody || 'Vous avez atteint le challenge "{{name}}" avec {{days}} jours de sobriété !')
+          .replace('{{name}}', milestoneName)
+          .replace('{{days}}', String(days));
+        
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title,
+            body,
+            sound: Boolean(true),
+            ...(Platform.OS === 'android' && {
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+            }),
+          },
+          trigger: null, // Notification immédiate
+        });
       }
     } catch (error) {
-      console.error('Erreur lors de la notification de jalon:', error);
+      console.error('Erreur lors de la notification de challenge:', error);
     }
   }
 
   // Programmer une notification de motivation
   static async scheduleMotivationalNotification(): Promise<void> {
-    const motivationalMessages = [
-      '💪 Vous êtes plus fort que vous ne le pensez ! Continuez votre parcours.',
-      '🌟 Chaque jour compte. Vous faites un excellent travail !',
-      '🌱 Votre arbre grandit grâce à votre détermination !',
-      '✨ La sobriété est un cadeau que vous vous offrez chaque jour.',
-      '🏆 Vous êtes un héros de votre propre histoire !',
-      '🌈 Après la pluie vient le beau temps. Continuez !',
-      '🦋 La transformation prend du temps, mais vous y arrivez !',
-      '💎 Vous êtes précieux et méritez le meilleur !',
-    ];
-
-    const randomMessage = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)];
+    const randomMessage = await this.getRandomMotivationalMessage();
 
     try {
       if (Platform.OS === 'web') {
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('💚 Message de Motivation', {
+          new Notification(await this.getMotivationalTitle(), {
             body: randomMessage,
             icon: '/favicon.png',
           });
@@ -126,10 +167,33 @@ export class NotificationService {
         console.log('Notifications annulées');
       } else {
         await Notifications.cancelAllScheduledNotificationsAsync();
-        console.log('Toutes les notifications ont été annulées');
+        console.log('[Notifications] Toutes les notifications ont été annulées');
       }
     } catch (error) {
       console.error('Erreur lors de l\'annulation des notifications:', error);
+    }
+  }
+
+  // Vérifier les notifications programmées (utile pour le débogage)
+  static async getScheduledNotifications(): Promise<any[]> {
+    try {
+      if (Platform.OS === 'web') {
+        return [];
+      } else {
+        const notifications = await Notifications.getAllScheduledNotificationsAsync();
+        console.log(`[Notifications] ${notifications.length} notifications programmées`);
+        if (notifications.length > 0) {
+          const firstNotification = notifications[0];
+          if (firstNotification.trigger && 'date' in firstNotification.trigger) {
+            const date = new Date(firstNotification.trigger.date as number);
+            console.log(`[Notifications] Prochaine notification: ${date.toLocaleString('fr-FR')}`);
+          }
+        }
+        return notifications;
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération des notifications:', error);
+      return [];
     }
   }
 
@@ -163,5 +227,34 @@ export class NotificationService {
       console.error('Erreur lors de l\'initialisation des notifications:', error);
       return false;
     }
+  }
+
+  // Helpers (mêmes signatures que NotificationService)
+  private static async getLang(): Promise<SupportedLanguage> {
+    const stored = await AsyncStorage.getItem('app_language');
+    if (stored === 'fr' || stored === 'en') return stored;
+    try {
+      const locale = Intl.DateTimeFormat().resolvedOptions().locale || 'en';
+      return locale.toLowerCase().startsWith('fr') ? 'fr' : 'en';
+    } catch {
+      return 'en';
+    }
+  }
+  static async getDailyTitle() {
+    const lang = await this.getLang();
+    return translations[lang].notifications.dailyTitle;
+  }
+  private static async getDailyBody() {
+    const lang = await this.getLang();
+    return translations[lang].notifications.dailyBody;
+  }
+  private static async getMotivationalTitle() {
+    const lang = await this.getLang();
+    return translations[lang].notifications.motivationalTitle;
+  }
+  private static async getRandomMotivationalMessage() {
+    const lang = await this.getLang();
+    const list = translations[lang].notifications.messages;
+    return list[Math.floor(Math.random() * list.length)];
   }
 }

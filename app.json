@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "SobrietyTracker",
+    "name": "DrinkAware",
     "slug": "SobrietyTracker",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -24,8 +24,21 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
+    "notification": {
+      "icon": "./assets/icon.png"
+    },
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/lottie/*.json"
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d8b1905b-545c-4cff-8ff9-35617824b932"
+      }
+    },
+    "owner": "darchevert"
   }
 }

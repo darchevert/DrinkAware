@@ -63,3 +63,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# temporary files
+com.facebook.react.fabric.*

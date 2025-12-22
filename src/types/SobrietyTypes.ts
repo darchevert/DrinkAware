@@ -3,9 +3,7 @@ export interface SobrietyData {
   currentStreak: number; // Nombre de jours consécutifs actuels
   totalDays: number; // Nombre total de jours de sobriété
   lastCheckDate: string; // Dernière vérification quotidienne
-  milestones: Milestone[]; // Jalons atteints
-  characterLevel: number; // Niveau du personnage/arbre
-  characterType: 'tree' | 'pet'; // Type de personnage
+  milestones: Milestone[]; // Challenges atteints
 }
 
 export interface Milestone {
@@ -17,15 +15,11 @@ export interface Milestone {
   description: string;
 }
 
+export type ConsumptionLevel = 'single_drink' | 'multiple_drinks' | 'too_much';
+
 export interface DailyCheck {
   date: string;
   sober: boolean;
   notes?: string;
-}
-
-export interface CharacterState {
-  level: number;
-  type: 'tree' | 'pet';
-  growthStage: number; // Étape de croissance (0-10)
-  unlockedFeatures: string[];
+  consumptionLevel?: ConsumptionLevel;
 }

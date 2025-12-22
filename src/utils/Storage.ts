@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const STORAGE_KEYS = {
   SOBRIETY_DATA: 'sobriety_data',
   DAILY_CHECKS: 'daily_checks',
-  CHARACTER_STATE: 'character_state',
 };
 
 export class StorageService {
@@ -16,11 +15,37 @@ export class StorageService {
     }
   }
 
+  // Normaliser les booléens dans les données (convertir les chaînes 'true'/'false' en booléens)
+  private static normalizeBooleans(obj: any): any {
+    if (obj === null || obj === undefined) return obj;
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.normalizeBooleans(item));
+    }
+    if (typeof obj === 'object') {
+      const normalized: any = {};
+      for (const key in obj) {
+        if (obj[key] === 'true') {
+          normalized[key] = true;
+        } else if (obj[key] === 'false') {
+          normalized[key] = false;
+        } else if (typeof obj[key] === 'object') {
+          normalized[key] = this.normalizeBooleans(obj[key]);
+        } else {
+          normalized[key] = obj[key];
+        }
+      }
+      return normalized;
+    }
+    return obj;
+  }
+
   // Charger les données de sobriété
   static async loadSobrietyData(): Promise<any | null> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SOBRIETY_DATA);
-      return data ? JSON.parse(data) : null;
+      if (!data) return null;
+      const parsed = JSON.parse(data);
+      return this.normalizeBooleans(parsed);
     } catch (error) {
       console.error('Erreur lors du chargement des données de sobriété:', error);
       return null;
@@ -51,19 +76,12 @@ export class StorageService {
   static async loadDailyChecks(): Promise<any[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.DAILY_CHECKS);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      return this.normalizeBooleans(parsed);
     } catch (error) {
       console.error('Erreur lors du chargement des vérifications quotidiennes:', error);
       return [];
-    }
-  }
-
-  // Sauvegarder l'état du personnage
-  static async saveCharacterState(state: any): Promise<void> {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.CHARACTER_STATE, JSON.stringify(state));
-    } catch (error) {
-      console.error('Erreur lors de la sauvegarde de l\'état du personnage:', error);
     }
   }
 
@@ -75,17 +93,6 @@ export class StorageService {
       await AsyncStorage.setItem(STORAGE_KEYS.DAILY_CHECKS, JSON.stringify(updatedChecks));
     } catch (error) {
       console.error('Erreur lors de la suppression de la vérification quotidienne:', error);
-    }
-  }
-
-  // Charger l'état du personnage
-  static async loadCharacterState(): Promise<any | null> {
-    try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.CHARACTER_STATE);
-      return data ? JSON.parse(data) : null;
-    } catch (error) {
-      console.error('Erreur lors du chargement de l\'état du personnage:', error);
-      return null;
     }
   }
 
@@ -121,7 +128,7 @@ export class StorageService {
 
         // si le jour de départ n'est pas sobre -> streak 0
         const startKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
-        if (!byDate[startKey] || !byDate[startKey].sober) {
+        if (!byDate[startKey] || !Boolean(byDate[startKey].sober)) {
           currentStreak = 0;
         } else {
           // Remonter jour par jour
@@ -131,7 +138,7 @@ export class StorageService {
             const prev = new Date(cursor);
             prev.setDate(prev.getDate() - 1);
             const key = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
-            if (byDate[key] && byDate[key].sober) {
+            if (byDate[key] && Boolean(byDate[key].sober)) {
               currentStreak += 1;
               lastCheckDate = key;
               cursor = prev;
@@ -142,7 +149,7 @@ export class StorageService {
         }
       }
 
-      totalDays = allChecks.filter(c => c.sober).length;
+      totalDays = allChecks.filter(c => Boolean(c.sober)).length;
 
       const existingData = await this.loadSobrietyData();
       if (!existingData) return null;
@@ -154,37 +161,50 @@ export class StorageService {
         lastCheckDate,
       };
 
-      // Mettre à jour startDate sur le début de la série actuelle (00:00 du jour de départ)
+      // Mettre à jour startDate : lendemain du dernier jour de consommation, ou premier jour sobre
       try {
-        if (currentStreak > 0 && allChecks.length > 0) {
-          const today = new Date();
-          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-          // Trouver l'index du dernier jour pris en compte (aujourd'hui si présent, sinon le dernier en base)
-          let endIndex = allChecks.findIndex((c: any) => c.date === todayStr);
-          if (endIndex === -1) endIndex = allChecks.length - 1;
-
-          // Début de la série actuelle = lastCheckDate calculé ci-dessus
-          const startDateObj = new Date(lastCheckDate || allChecks[endIndex].date);
+        if (allChecks.length > 0) {
+          // Trier par date décroissante pour trouver la dernière consommation
+          const sortedChecksDesc = [...allChecks].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          
+          // Trouver le dernier jour avec consommation
+          const lastConsumptionCheck = sortedChecksDesc.find((c: any) => !Boolean(c.sober));
+          
+          let startDateStr: string;
+          
+          if (lastConsumptionCheck) {
+            // Si il y a eu une consommation, prendre le lendemain du dernier jour de consommation
+            const lastConsumptionDate = new Date(lastConsumptionCheck.date);
+            lastConsumptionDate.setDate(lastConsumptionDate.getDate() + 1);
+            startDateStr = `${lastConsumptionDate.getFullYear()}-${String(lastConsumptionDate.getMonth() + 1).padStart(2, '0')}-${String(lastConsumptionDate.getDate()).padStart(2, '0')}`;
+          } else {
+            // Sinon, prendre le premier jour sobre (trier par date croissante)
+            const sortedChecksAsc = [...allChecks].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            const firstSoberCheck = sortedChecksAsc.find((c: any) => Boolean(c.sober));
+            if (firstSoberCheck) {
+              startDateStr = firstSoberCheck.date;
+            } else {
+              // Fallback: utiliser lastCheckDate si calculé, sinon la première date
+              startDateStr = lastCheckDate || allChecks[0].date;
+            }
+          }
+          
+          // Créer la date de début à 00:00:00
+          const startDateObj = new Date(startDateStr);
           const startOfDay = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate(), 0, 0, 0, 0);
           const computedStartIso = startOfDay.toISOString();
-
-          // Si une consommation a été enregistrée aujourd'hui, on garde la précision déjà stockée
-          const hasConsumptionToday = allChecks.some((c: any) => c.date === todayStr && !c.sober);
-
-          if (!hasConsumptionToday) {
-            // Toujours aligner sur le début de la série actuelle, même après une réinitialisation manuelle
-            updatedData.startDate = computedStartIso;
-          }
+          
+          // Mettre à jour startDate
+          updatedData.startDate = computedStartIso;
         }
       } catch (e) {
         console.warn('Recalculate: mise à jour startDate (début série) ignorée:', e);
       }
 
-      // Mettre à jour les jalons
+      // Mettre à jour les challenges
       if (Array.isArray(updatedData.milestones)) {
         updatedData.milestones = updatedData.milestones.map((m: any) => {
-          if (!m.achieved && currentStreak >= m.daysRequired) {
+          if (!Boolean(m.achieved) && currentStreak >= m.daysRequired) {
             return { ...m, achieved: true, achievedDate: lastCheckDate };
           }
           return m;
@@ -192,15 +212,6 @@ export class StorageService {
       }
 
       await this.saveSobrietyData(updatedData);
-
-      // Mettre à jour le personnage selon la série
-      const characterState = await this.loadCharacterState();
-      if (characterState) {
-        const newLevel = Math.floor(currentStreak / 10) + 1;
-        const newGrowthStage = Math.min(Math.floor(currentStreak / 7), 9);
-        const updatedCharacter = { ...characterState, level: newLevel, growthStage: newGrowthStage };
-        await this.saveCharacterState(updatedCharacter);
-      }
 
       return updatedData;
     } catch (error) {

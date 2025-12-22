@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,43 +8,103 @@ import {
   Switch,
   Modal,
   ScrollView,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import TimeWheelPicker from '../components/TimeWheelPicker';
 
-import { CharacterState } from '../types/SobrietyTypes';
 import { StorageService } from '../utils/Storage';
 import { NotificationService } from '../utils/SimpleNotificationService';
+import { OnboardingService } from '../utils/OnboardingService';
+import { useLanguage, useT } from '../i18n/i18n';
+import { buildDefaultMilestones } from '../utils/milestones';
+import { useTheme } from '../theme/Theme';
+import { triggerSelection } from '../utils/Haptics';
 
 interface SettingsScreenProps {
   navigation: any;
 }
 
 export default function SettingsScreen({ navigation }: SettingsScreenProps) {
-  const [characterState, setCharacterState] = useState<CharacterState | null>(null);
+  const { language, setLanguage } = useLanguage();
+  const t = useT();
+  const { mode, setMode, colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [reminderHour, setReminderHour] = useState<number>(20);
   const [reminderMinute, setReminderMinute] = useState<number>(0);
+  // Variables temporaires pour le modal (non sauvegardées tant qu'on n'appuie pas sur Enregistrer)
+  const [tempReminderHour, setTempReminderHour] = useState<number>(20);
+  const [tempReminderMinute, setTempReminderMinute] = useState<number>(0);
   const [showTimeModal, setShowTimeModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [detailedConsumptionEnabled, setDetailedConsumptionEnabled] = useState(false);
+  const reminderTimeValue = useMemo(() => {
+    const base = new Date();
+    base.setHours(reminderHour);
+    base.setMinutes(reminderMinute);
+    base.setSeconds(0);
+    base.setMilliseconds(0);
+    return base;
+  }, [reminderHour, reminderMinute]);
+
+  const handleReminderTimeChange = (hour: number, minute: number) => {
+    // Mettre à jour seulement les valeurs temporaires
+    setTempReminderHour(hour);
+    setTempReminderMinute(minute);
+  };
 
   useEffect(() => {
     loadData();
   }, []);
 
+  // Recharger et reprogrammer les notifications quand l'utilisateur revient sur cet écran
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', async () => {
+      // Si les notifications sont activées, s'assurer qu'elles sont bien programmées
+      if (notificationsEnabled) {
+        try {
+          const time = await AsyncStorage.getItem('daily_reminder_time');
+          if (time) {
+            const [h, m] = time.split(':').map(Number);
+            if (!Number.isNaN(h) && !Number.isNaN(m)) {
+              // Reprogrammer les notifications pour maintenir 30 jours à l'avance
+              await NotificationService.scheduleDailyNotification(h, m);
+            }
+          }
+        } catch (error) {
+          console.error('Erreur lors de la reprogrammation des notifications:', error);
+        }
+      }
+    });
+    return unsubscribe;
+  }, [navigation, notificationsEnabled]);
+
   const loadData = async () => {
     try {
-      const character = await StorageService.loadCharacterState();
-      if (character) {
-        setCharacterState(character);
-      }
-
       // Charger paramètres notifications
       const enabled = await AsyncStorage.getItem('notifications_enabled');
       const time = await AsyncStorage.getItem('daily_reminder_time');
-      if (enabled !== null) setNotificationsEnabled(enabled === 'true');
+      if (enabled !== null) {
+        const isEnabled = enabled === 'true';
+        setNotificationsEnabled(isEnabled);
+        // Si les notifications sont activées, programmer la notification
+        if (isEnabled && time) {
+          const [h, m] = time.split(':').map(Number);
+          if (!Number.isNaN(h) && !Number.isNaN(m)) {
+            setReminderHour(h);
+            setReminderMinute(m);
+            // Programmer la notification avec l'heure chargée
+            await NotificationService.scheduleDailyNotification(h, m);
+          }
+        } else if (!isEnabled) {
+          // Si les notifications sont désactivées, annuler toutes les notifications
+          await NotificationService.cancelAllNotifications();
+        }
+      }
       if (time) {
         const [h, m] = time.split(':').map(Number);
         if (!Number.isNaN(h) && !Number.isNaN(m)) {
@@ -52,28 +112,15 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           setReminderMinute(m);
         }
       }
+
+      const consumptionSetting = await AsyncStorage.getItem('detailed_consumption_enabled');
+      if (consumptionSetting !== null) {
+        setDetailedConsumptionEnabled(consumptionSetting === 'true');
+      }
     } catch (error) {
       console.error('Erreur lors du chargement des données:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleCharacterTypeChange = async (type: 'tree' | 'pet') => {
-    if (!characterState) return;
-
-    try {
-      const updatedCharacter = { ...characterState, type };
-      await StorageService.saveCharacterState(updatedCharacter);
-      setCharacterState(updatedCharacter);
-      
-      Alert.alert(
-        'Personnage changé',
-        `Vous avez choisi un ${type === 'tree' ? 'arbre' : 'compagnon'} !`
-      );
-    } catch (error) {
-      console.error('Erreur lors du changement de personnage:', error);
-      Alert.alert('Erreur', 'Impossible de changer le personnage.');
     }
   };
 
@@ -84,6 +131,8 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       await AsyncStorage.setItem('notifications_enabled', 'true');
       await AsyncStorage.setItem('daily_reminder_time', `${String(reminderHour).padStart(2,'0')}:${String(reminderMinute).padStart(2,'0')}`);
       await NotificationService.scheduleDailyNotification(reminderHour, reminderMinute);
+      // Vérifier que les notifications ont bien été programmées
+      await NotificationService.getScheduledNotifications();
     } else {
       await AsyncStorage.setItem('notifications_enabled', 'false');
       await NotificationService.cancelAllNotifications();
@@ -91,20 +140,41 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   };
 
   const openTimePicker = () => {
+    // Initialiser les valeurs temporaires avec les valeurs actuelles
+    setTempReminderHour(reminderHour);
+    setTempReminderMinute(reminderMinute);
     setShowTimeModal(true);
   };
 
   const closeTimePicker = () => {
+    // Réinitialiser les valeurs temporaires
+    setTempReminderHour(reminderHour);
+    setTempReminderMinute(reminderMinute);
     setShowTimeModal(false);
   };
 
   const saveTime = async () => {
-    await AsyncStorage.setItem('daily_reminder_time', `${String(reminderHour).padStart(2,'0')}:${String(reminderMinute).padStart(2,'0')}`);
+    // Utiliser les valeurs temporaires pour sauvegarder
+    await AsyncStorage.setItem('daily_reminder_time', `${String(tempReminderHour).padStart(2,'0')}:${String(tempReminderMinute).padStart(2,'0')}`);
+    // Mettre à jour les valeurs réelles avec les valeurs temporaires
+    setReminderHour(tempReminderHour);
+    setReminderMinute(tempReminderMinute);
     if (notificationsEnabled) {
       await NotificationService.cancelAllNotifications();
-      await NotificationService.scheduleDailyNotification(reminderHour, reminderMinute);
+      await NotificationService.scheduleDailyNotification(tempReminderHour, tempReminderMinute);
+      // Vérifier que les notifications ont bien été programmées
+      await NotificationService.getScheduledNotifications();
     }
     setShowTimeModal(false);
+  };
+
+  const handleConsumptionDetailToggle = async (enabled: boolean) => {
+    setDetailedConsumptionEnabled(enabled);
+    await AsyncStorage.setItem('detailed_consumption_enabled', enabled ? 'true' : 'false');
+  };
+
+  const handleChangeLanguage = async (lang: 'fr' | 'en') => {
+    await setLanguage(lang);
   };
 
   const handleResetData = () => {
@@ -124,44 +194,22 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         currentStreak: 0,
         totalDays: 0,
         lastCheckDate: '',
-        milestones: [
-          { id: '1', name: 'Premier jour', daysRequired: 1, achieved: false, description: 'Bravo pour ce premier pas !' },
-          { id: '2', name: 'Une semaine', daysRequired: 7, achieved: false, description: 'Une semaine complète !' },
-          { id: '3', name: '10 jours', daysRequired: 10, achieved: false, description: 'Double chiffre atteint !' },
-          { id: '4', name: 'Deux semaines', daysRequired: 14, achieved: false, description: 'Deux semaines de victoires !' },
-          { id: '5', name: 'Un mois', daysRequired: 30, achieved: false, description: 'Un mois entier !' },
-          { id: '6', name: 'Deux mois', daysRequired: 60, achieved: false, description: 'Deux mois de réussite !' },
-          { id: '7', name: 'Trois mois', daysRequired: 90, achieved: false, description: 'Trois mois de sobriété !' },
-          { id: '8', name: 'Six mois', daysRequired: 180, achieved: false, description: 'Demi-année de victoire !' },
-          { id: '9', name: 'Un an', daysRequired: 365, achieved: false, description: 'Une année complète !' },
-        ],
-        characterLevel: 1,
-        characterType: characterState?.type || 'tree',
-      };
-
-      const defaultCharacter = {
-        level: 1,
-        type: characterState?.type || 'tree',
-        growthStage: 0,
-        unlockedFeatures: [],
+        milestones: buildDefaultMilestones(t),
       };
 
       console.log('Sauvegarde des données par défaut');
       await StorageService.saveSobrietyData(defaultData);
-      await StorageService.saveCharacterState(defaultCharacter);
       // Réinitialiser les vérifications quotidiennes
       await AsyncStorage.setItem('daily_checks', JSON.stringify([]));
-
-      setCharacterState(defaultCharacter);
       
       console.log('Réinitialisation terminée avec succès');
-      Alert.alert('Succès', 'Toutes les données ont été réinitialisées.');
+      Alert.alert(t('common.success'), t('settings.resetData'));
       
       // Naviguer vers l'écran d'accueil pour forcer le rechargement
       navigation.navigate('Accueil');
     } catch (error) {
       console.error('Erreur lors de la réinitialisation:', error);
-      Alert.alert('Erreur', 'Impossible de réinitialiser les données.');
+      Alert.alert(t('common.error'), '');
     }
   };
 
@@ -174,90 +222,108 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Chargement...</Text>
+          <Text style={styles.loadingText}>{t('common.loading')}</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['left', 'right']}>
+      <ScrollView 
+        style={[styles.scrollView, { marginTop: insets.top }]} 
+        showsVerticalScrollIndicator={Boolean(false)}
+        contentContainerStyle={{ paddingTop: 20 }}
+        {...(Platform.OS === 'ios' && { contentInsetAdjustmentBehavior: 'automatic' })}
+        scrollIndicatorInsets={{ top: 0 }}
+      >
         <View style={styles.content}>
-          {/* Personnage */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Personnage</Text>
-            
-            <View style={styles.characterContainer}>
-              <Text style={styles.characterLabel}>Type de personnage</Text>
-              <View style={styles.characterOptions}>
-                <TouchableOpacity
-                  style={[
-                    styles.characterOption,
-                    characterState?.type === 'tree' && styles.characterOptionSelected
-                  ]}
-                  onPress={() => handleCharacterTypeChange('tree')}
-                >
-                  <Ionicons 
-                    name="leaf" 
-                    size={30} 
-                    color={characterState?.type === 'tree' ? '#4CAF50' : '#666'} 
-                  />
-                  <Text style={[
-                    styles.characterOptionText,
-                    characterState?.type === 'tree' && styles.characterOptionTextSelected
-                  ]}>
-                    Arbre
-                  </Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={[
-                    styles.characterOption,
-                    characterState?.type === 'pet' && styles.characterOptionSelected
-                  ]}
-                  onPress={() => handleCharacterTypeChange('pet')}
-                >
-                  <Ionicons 
-                    name="heart" 
-                    size={30} 
-                    color={characterState?.type === 'pet' ? '#4CAF50' : '#666'} 
-                  />
-                  <Text style={[
-                    styles.characterOptionText,
-                    characterState?.type === 'pet' && styles.characterOptionTextSelected
-                  ]}>
-                    Compagnon
-                  </Text>
-                </TouchableOpacity>
+          {/* Apparence */}
+          <View style={[styles.section, { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('settings.appearance')}</Text>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={[styles.settingLabel, { color: colors.text }]}>{t('settings.darkMode')}</Text>
+                <Text style={[styles.settingDescription, { color: colors.mutedText }]}>
+                  {mode === 'dark' ? 'On' : 'Off'}
+                </Text>
               </View>
+              <Switch
+                value={Boolean(mode === 'dark')}
+                onValueChange={async (enabled) => {
+                  await setMode(enabled ? 'dark' : 'light');
+                }}
+                trackColor={{ false: '#767577', true: '#4CAF50' }}
+                thumbColor={mode === 'dark' ? '#fff' : '#f4f3f4'}
+              />
+            </View>
+          </View>
+          {/* Langue */}
+          <View style={[styles.section, { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('settings.language')}</Text>
+            <Text style={[styles.settingDescription, { color: colors.mutedText }]}>{t('settings.languageDescription')}</Text>
+            <View style={{ flexDirection: 'row', marginTop: 12, gap: 10, justifyContent: 'space-between' }}>
+              <TouchableOpacity 
+                style={[
+                  styles.actionButton, 
+                  { 
+                    flex: 1, 
+                    minWidth: 0, 
+                    justifyContent: 'center', 
+                    borderColor: language === 'fr' ? colors.primary : (mode === 'dark' ? colors.border : '#ddd'),
+                    backgroundColor: language === 'fr' 
+                      ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
+                      : colors.card
+                  }
+                ]}
+                onPress={() => handleChangeLanguage('fr')}
+              >
+                <Ionicons name="language" size={20} color={language === 'fr' ? colors.primary : (mode === 'dark' ? colors.text : '#666')} />
+                <Text style={[styles.actionButtonText, { color: language === 'fr' ? colors.primary : (mode === 'dark' ? colors.text : '#666') }]}>{t('settings.french')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[
+                  styles.actionButton, 
+                  { 
+                    flex: 1, 
+                    minWidth: 0, 
+                    justifyContent: 'center', 
+                    borderColor: language === 'en' ? colors.primary : (mode === 'dark' ? colors.border : '#ddd'),
+                    backgroundColor: language === 'en' 
+                      ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
+                      : colors.card
+                  }
+                ]}
+                onPress={() => handleChangeLanguage('en')}
+              >
+                <Ionicons name="language" size={20} color={language === 'en' ? colors.primary : (mode === 'dark' ? colors.text : '#666')} />
+                <Text style={[styles.actionButtonText, { color: language === 'en' ? colors.primary : (mode === 'dark' ? colors.text : '#666') }]}>{t('settings.english')}</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
           {/* Notifications */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Notifications</Text>
+          <View style={[styles.section, { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('settings.notifications')}</Text>
             
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Rappels quotidiens</Text>
-                <Text style={styles.settingDescription}>
-                  Recevoir une notification pour la vérification quotidienne
-                </Text>
+                <Text style={[styles.settingLabel, { color: colors.text }]}>{t('settings.dailyReminders')}</Text>
+                <Text style={[styles.settingDescription, { color: colors.mutedText }]}>{t('settings.dailyRemindersDescription')}</Text>
               </View>
               <Switch
-                value={notificationsEnabled}
+                value={Boolean(notificationsEnabled)}
                 onValueChange={handleNotificationToggle}
                 trackColor={{ false: '#767577', true: '#4CAF50' }}
-                thumbColor={notificationsEnabled ? '#fff' : '#f4f3f4'}
+                thumbColor={Boolean(notificationsEnabled) ? '#fff' : '#f4f3f4'}
               />
             </View>
 
             {/* Sélection de l'heure */}
-            <TouchableOpacity style={styles.settingRow} onPress={openTimePicker} disabled={!notificationsEnabled}>
+            <TouchableOpacity style={styles.settingRow} onPress={openTimePicker} disabled={!Boolean(notificationsEnabled)}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Heure du rappel</Text>
-                <Text style={styles.settingDescription}>
+                <Text style={[styles.settingLabel, { color: colors.text }]}>{t('settings.reminderTime')}</Text>
+                <Text style={[styles.settingDescription, { color: colors.mutedText }]}>
                   {`${String(reminderHour).padStart(2,'0')}:${String(reminderMinute).padStart(2,'0')}`}
                 </Text>
               </View>
@@ -265,26 +331,94 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             </TouchableOpacity>
           </View>
 
+          {/* Vérification quotidienne */}
+          <View style={[styles.section, { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('settings.consumptionDetailTitle')}</Text>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={[styles.settingDescription, { color: colors.mutedText }]}>{t('settings.consumptionDetailDescription')}</Text>
+              </View>
+              <Switch
+                value={Boolean(detailedConsumptionEnabled)}
+                onValueChange={handleConsumptionDetailToggle}
+                trackColor={{ false: '#767577', true: '#4CAF50' }}
+                thumbColor={Boolean(detailedConsumptionEnabled) ? '#fff' : '#f4f3f4'}
+              />
+            </View>
+          </View>
+
           {/* Actions */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Actions</Text>
+          <View style={[styles.section, { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('settings.actions')}</Text>
             
-            <TouchableOpacity style={styles.actionButton} onPress={handleResetData}>
+            <TouchableOpacity 
+              style={[
+                styles.actionButton, 
+                { 
+                  borderColor: colors.primary, 
+                  backgroundColor: mode === 'dark' ? colors.primary + '20' : '#f1f8e9'
+                }
+              ]} 
+              onPress={async () => {
+                triggerSelection();
+                await OnboardingService.resetOnboarding();
+                // Naviguer vers l'écran d'accueil pour déclencher la vérification de l'onboarding
+                navigation.navigate('Accueil');
+                // L'onboarding sera détecté et affiché automatiquement
+              }}
+            >
+              <Ionicons name="book-outline" size={24} color={colors.primary} />
+              <Text style={[styles.actionButtonText, { color: colors.primary }]}>
+                {t('settings.showOnboarding' as any)}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[
+                styles.actionButton, 
+                styles.actionButtonSpacing,
+                {
+                  borderColor: colors.primary,
+                  backgroundColor: mode === 'dark' ? colors.primary + '20' : '#f1f8e9'
+                }
+              ]} 
+              onPress={() => {
+                triggerSelection();
+                navigation.navigate('WidgetTutorial');
+              }}
+            >
+              <Ionicons name="apps-outline" size={24} color={colors.primary} />
+              <Text style={[styles.actionButtonText, { color: colors.primary }]}>
+                {t('settings.widgetTutorial')}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[
+                styles.actionButton, 
+                styles.actionButtonSpacing,
+                {
+                  borderColor: '#f44336',
+                  backgroundColor: mode === 'dark' ? '#f44336' + '20' : '#ffebee'
+                }
+              ]} 
+              onPress={handleResetData}
+            >
               <Ionicons name="refresh" size={24} color="#f44336" />
-              <Text style={styles.actionButtonText}>Réinitialiser les données</Text>
+              <Text style={[styles.actionButtonText, { color: '#f44336' }]}>{t('settings.resetData')}</Text>
             </TouchableOpacity>
           </View>
 
           {/* Informations */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Informations</Text>
+          <View style={[styles.section, { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('settings.info')}</Text>
             
             <View style={styles.infoContainer}>
-              <Text style={styles.infoText}>
-                Sobriety Tracker v1.0.0
+              <Text style={[styles.infoText, { color: colors.mutedText }]}>
+                {t('settings.appName')}
               </Text>
-              <Text style={styles.infoText}>
-                Développé avec ❤️ pour vous accompagner dans votre parcours de sobriété.
+              <Text style={[styles.infoText, { color: colors.mutedText }]}>
+                {t('settings.appDesc')}
               </Text>
             </View>
           </View>
@@ -293,81 +427,85 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       
       {/* Modal de réinitialisation */}
       <Modal
-        visible={showResetModal}
+        visible={Boolean(showResetModal)}
         transparent={true}
         animationType="fade"
         onRequestClose={cancelReset}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Réinitialiser les données</Text>
-            <Text style={styles.modalText}>
-              Êtes-vous sûr de vouloir réinitialiser toutes vos données ? Cette action est irréversible.
-            </Text>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={cancelReset}>
+          <TouchableOpacity style={[styles.modalContent, { backgroundColor: colors.card }]} activeOpacity={1} onPress={() => {}}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{t('settings.resetModalTitle')}</Text>
+            <Text style={[styles.modalText, { color: colors.mutedText }]}>{t('settings.resetModalText')}</Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]} 
+                style={[
+                  styles.modalButton, 
+                  styles.cancelButton,
+                  {
+                    backgroundColor: mode === 'dark' ? colors.card : '#f5f5f5',
+                    borderColor: mode === 'dark' ? colors.border : '#ddd',
+                  }
+                ]} 
                 onPress={cancelReset}
               >
-                <Text style={styles.cancelButtonText}>Annuler</Text>
+                <Text style={[styles.cancelButtonText, { color: mode === 'dark' ? colors.text : '#666' }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.modalButton, styles.resetButton]} 
                 onPress={confirmReset}
               >
-                <Text style={styles.resetButtonText}>Réinitialiser</Text>
+                <Text style={styles.resetButtonText}>{t('settings.resetData')}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Modal choix de l'heure */}
       <Modal
-        visible={showTimeModal}
+        visible={Boolean(showTimeModal)}
         transparent={true}
         animationType="fade"
         onRequestClose={closeTimePicker}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Choisir l'heure du rappel</Text>
-            <View style={styles.timePickerRow}>
-              <View style={styles.timeCol}>
-                <Text style={styles.timeLabel}>Heure</Text>
-                <View style={styles.stepperRow}>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setReminderHour((h)=> (h+23)%24)}>
-                    <Ionicons name="chevron-down" size={20} color="#333" />
-                  </TouchableOpacity>
-                  <Text style={styles.timeValue}>{String(reminderHour).padStart(2,'0')}</Text>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setReminderHour((h)=> (h+1)%24)}>
-                    <Ionicons name="chevron-up" size={20} color="#333" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-              <View style={styles.timeCol}>
-                <Text style={styles.timeLabel}>Minutes</Text>
-                <View style={styles.stepperRow}>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setReminderMinute((m)=> (m+59)%60)}>
-                    <Ionicons name="chevron-down" size={20} color="#333" />
-                  </TouchableOpacity>
-                  <Text style={styles.timeValue}>{String(reminderMinute).padStart(2,'0')}</Text>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setReminderMinute((m)=> (m+1)%60)}>
-                    <Ionicons name="chevron-up" size={20} color="#333" />
-                  </TouchableOpacity>
-                </View>
-              </View>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={closeTimePicker}>
+          <TouchableOpacity style={[styles.reminderTimeModalContent, { backgroundColor: colors.card }]} activeOpacity={1} onPress={() => {}}>
+            <Text style={[styles.reminderTimeModalTitle, { color: colors.text }]}>{t('settings.reminderTime')}</Text>
+            <View style={styles.reminderTimePickerContainer}>
+              <TimeWheelPicker
+                hour={tempReminderHour}
+                minute={tempReminderMinute}
+                onHourChange={(value) => handleReminderTimeChange(value, tempReminderMinute)}
+                onMinuteChange={(value) => handleReminderTimeChange(tempReminderHour, value)}
+                textColor={colors.text}
+                highlightColor={mode === 'dark' ? 'rgba(255,255,255,0.08)' : '#E8F5E9'}
+                itemBackground={colors.card}
+                accentColor={colors.primary}
+              />
             </View>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={closeTimePicker}>
-                <Text style={styles.cancelButtonText}>Annuler</Text>
+            <View style={styles.reminderTimeModalButtons}>
+              <TouchableOpacity 
+                style={[
+                  styles.reminderTimeModalButton, 
+                  styles.reminderTimeCancelButton,
+                  {
+                    backgroundColor: mode === 'dark' ? 'transparent' : 'transparent',
+                    borderColor: mode === 'dark' ? colors.border : '#E0E0E0',
+                  }
+                ]} 
+                onPress={closeTimePicker}
+              >
+                <Text style={[styles.reminderTimeCancelButtonText, { color: mode === 'dark' ? colors.text : '#666' }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.resetButton]} onPress={saveTime}>
-                <Text style={styles.resetButtonText}>Enregistrer</Text>
+              <TouchableOpacity 
+                style={[styles.reminderTimeModalButton, styles.reminderTimeSaveButton, { backgroundColor: colors.primary }]} 
+                onPress={saveTime}
+              >
+                <Text style={styles.reminderTimeSaveButtonText}>{t('settings.save')}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -410,40 +548,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 15,
   },
-  characterContainer: {
-    marginTop: 10,
-  },
-  characterLabel: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 15,
-  },
-  characterOptions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  characterOption: {
-    alignItems: 'center',
-    padding: 15,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    flex: 1,
-    marginHorizontal: 5,
-  },
-  characterOptionSelected: {
-    borderColor: '#4CAF50',
-    backgroundColor: '#f1f8e9',
-  },
-  characterOptionText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 8,
-  },
-  characterOptionTextSelected: {
-    color: '#4CAF50',
-    fontWeight: 'bold',
-  },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -467,12 +571,16 @@ const styles = StyleSheet.create({
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 15,
     paddingHorizontal: 20,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#f44336',
     backgroundColor: '#ffebee',
+  },
+  actionButtonSpacing: {
+    marginTop: 16,
   },
   actionButtonText: {
     fontSize: 16,
@@ -494,12 +602,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
   },
   modalContent: {
     backgroundColor: '#fff',
     borderRadius: 15,
     padding: 20,
-    margin: 20,
+    width: '100%',
+    maxWidth: 400,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -539,6 +650,9 @@ const styles = StyleSheet.create({
   resetButton: {
     backgroundColor: '#f44336',
   },
+  saveButton: {
+    backgroundColor: '#4CAF50',
+  },
   cancelButtonText: {
     color: '#666',
     fontSize: 16,
@@ -551,36 +665,58 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  timePickerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 10,
+  reminderTimeModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 32,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  timeCol: {
-    alignItems: 'center',
-    padding: 10,
-  },
-  timeLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 6,
-  },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  stepperBtn: {
-    padding: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    backgroundColor: '#f9f9f9',
-  },
-  timeValue: {
-    fontSize: 22,
+  reminderTimeModalTitle: {
+    fontSize: 24,
     fontWeight: 'bold',
-    width: 40,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  reminderTimePickerContainer: {
+    marginBottom: 32,
+  },
+  reminderTimeModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  reminderTimeModalButton: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reminderTimeCancelButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+  },
+  reminderTimeSaveButton: {
+    backgroundColor: '#4CAF50',
+  },
+  reminderTimeCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    textAlign: 'center',
+  },
+  reminderTimeSaveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
     textAlign: 'center',
   },
 });
