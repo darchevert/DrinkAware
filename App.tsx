@@ -38,6 +38,9 @@ export default function App() {
     });
 
           // Écouter les notifications reçues pour reprogrammer la suivante
+          // Utiliser un flag pour éviter les reprogrammations multiples
+          let lastReprogramDate: string | null = null;
+          
           subscription = Notifications.addNotificationReceivedListener(async (notification) => {
             try {
               // Vérifier si c'est une notification quotidienne (en vérifiant le titre)
@@ -49,12 +52,22 @@ export default function App() {
                 const time = await AsyncStorage.getItem('daily_reminder_time');
                 const enabled = await AsyncStorage.getItem('notifications_enabled');
                 
+                // Vérifier que les notifications sont toujours activées
                 if (time && enabled === 'true') {
                   const [h, m] = time.split(':').map(Number);
                   if (!Number.isNaN(h) && !Number.isNaN(m)) {
-                    console.log('[Notifications] Notification quotidienne reçue, reprogrammation pour demain...');
-                    await NotificationService.scheduleDailyNotification(h, m);
+                    // Éviter les reprogrammations multiples le même jour
+                    const today = new Date().toDateString();
+                    if (lastReprogramDate !== today) {
+                      console.log('[Notifications] Notification quotidienne reçue, reprogrammation pour demain...');
+                      lastReprogramDate = today;
+                      await NotificationService.scheduleDailyNotification(h, m);
+                    } else {
+                      console.log('[Notifications] Reprogrammation déjà effectuée aujourd\'hui, ignorée');
+                    }
                   }
+                } else {
+                  console.log('[Notifications] Notifications désactivées, aucune reprogrammation');
                 }
               }
             } catch (error) {

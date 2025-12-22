@@ -29,6 +29,9 @@ export class NotificationService {
     return request.granted || request.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
   }
 
+  // Identifiant unique pour la notification quotidienne
+  private static readonly DAILY_NOTIFICATION_ID = 'daily-reminder-notification';
+
   // Programmer une notification quotidienne à une heure donnée (heure/minute en locale)
   static async scheduleDailyNotification(hour: number = 20, minute: number = 0): Promise<void> {
     try {
@@ -50,9 +53,17 @@ export class NotificationService {
           });
         }
 
-        // Annuler les rappel(s) existant(s) et programmer le nouveau
-        const all = await Notifications.getAllScheduledNotificationsAsync();
-        await Promise.all(all.map(n => Notifications.cancelScheduledNotificationAsync(n.identifier)));
+        // IMPORTANT: Annuler TOUTES les notifications existantes avant d'en programmer une nouvelle
+        // Cela évite les doublons et les notifications multiples
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        console.log('[Notifications] Toutes les notifications précédentes ont été annulées');
+
+        // Vérifier que les notifications sont activées avant de programmer
+        const enabled = await AsyncStorage.getItem('notifications_enabled');
+        if (enabled !== 'true') {
+          console.log('[Notifications] Notifications désactivées, aucune notification programmée');
+          return;
+        }
 
         // Calculer la prochaine occurrence de l'heure programmée
         const now = new Date();
@@ -62,14 +73,15 @@ export class NotificationService {
         targetTime.setMilliseconds(0);
 
         // Si l'heure programmée est déjà passée aujourd'hui, programmer pour demain à la même heure
-        // Utiliser une marge de sécurité de 5 secondes pour éviter le déclenchement immédiat
+        // Utiliser une marge de sécurité de 10 secondes pour éviter le déclenchement immédiat
         // si l'utilisateur programme exactement à l'heure actuelle
-        const safetyMargin = 5 * 1000; // 5 secondes en millisecondes
+        const safetyMargin = 10 * 1000; // 10 secondes en millisecondes
         const isTimePassed = targetTime.getTime() <= now.getTime() + safetyMargin;
         
         if (isTimePassed) {
           // Si l'heure est passée, programmer pour demain à la même heure
           targetTime.setDate(targetTime.getDate() + 1);
+          console.log(`[Notifications] L'heure est passée, programmation pour demain`);
         }
 
         const title = await NotificationService.getDailyTitle();
@@ -84,7 +96,9 @@ export class NotificationService {
           // Le trigger attend un objet Date
           const triggerDate = new Date(targetTime);
           
+          // Utiliser un identifiant unique pour éviter les doublons
           await Notifications.scheduleNotificationAsync({
+            identifier: NotificationService.DAILY_NOTIFICATION_ID,
             content: {
               title,
               body,
@@ -96,6 +110,13 @@ export class NotificationService {
           });
           
           console.log(`[Notifications] Notification programmée avec succès pour: ${triggerDate.toLocaleString('fr-FR')} (heure choisie: ${hour}:${String(minute).padStart(2, '0')}, maintenant: ${now.toLocaleString('fr-FR')})`);
+          
+          // Vérifier qu'une seule notification est programmée
+          const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+          console.log(`[Notifications] ${scheduled.length} notification(s) programmée(s) au total`);
+          if (scheduled.length > 1) {
+            console.warn(`[Notifications] ATTENTION: ${scheduled.length} notifications programmées au lieu d'une seule!`);
+          }
         } catch (error) {
           console.error(`[Notifications] Erreur lors de la programmation de la notification:`, error);
         }
