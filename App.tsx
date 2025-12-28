@@ -37,10 +37,42 @@ export default function App() {
       }),
     });
 
-          // Écouter les notifications reçues pour reprogrammer la suivante
-          // Utiliser un flag pour éviter les reprogrammations multiples
-          let lastReprogramDate: string | null = null;
-          
+          // NOTIFICATIONS AUTOMATIQUES À 20H : Reprogrammer automatiquement à 20h après réception
+          subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+            try {
+              // Vérifier si c'est une notification quotidienne (en vérifiant le titre)
+              const title = notification.request.content.title;
+              const dailyTitle = await NotificationService.getDailyTitle();
+              
+              // Si c'est la notification quotidienne, reprogrammer pour demain à 20h
+              if (title === dailyTitle) {
+                const enabled = await AsyncStorage.getItem('notifications_enabled');
+                
+                // Vérifier que les notifications sont toujours activées
+                if (enabled === 'true') {
+                  // Éviter les reprogrammations multiples le même jour en utilisant AsyncStorage
+                  const today = new Date().toDateString();
+                  const lastReprogramDate = await AsyncStorage.getItem('last_notification_reprogram_date');
+                  
+                  if (lastReprogramDate !== today) {
+                    console.log('[Notifications] Notification quotidienne reçue, reprogrammation pour demain à 20h...');
+                    await AsyncStorage.setItem('last_notification_reprogram_date', today);
+                    // Programmer automatiquement à 20h (heure fixe)
+                    await NotificationService.scheduleDailyNotification(20, 0, false);
+                  } else {
+                    console.log('[Notifications] Reprogrammation déjà effectuée aujourd\'hui, ignorée');
+                  }
+                } else {
+                  console.log('[Notifications] Notifications désactivées, aucune reprogrammation');
+                }
+              }
+            } catch (error) {
+              console.error('[Notifications] Erreur lors de la reprogrammation:', error);
+            }
+          });
+
+          // CODE COMMENTÉ : Ancien système avec heure configurable
+          /*
           subscription = Notifications.addNotificationReceivedListener(async (notification) => {
             try {
               // Vérifier si c'est une notification quotidienne (en vérifiant le titre)
@@ -56,12 +88,15 @@ export default function App() {
                 if (time && enabled === 'true') {
                   const [h, m] = time.split(':').map(Number);
                   if (!Number.isNaN(h) && !Number.isNaN(m)) {
-                    // Éviter les reprogrammations multiples le même jour
+                    // Éviter les reprogrammations multiples le même jour en utilisant AsyncStorage
                     const today = new Date().toDateString();
+                    const lastReprogramDate = await AsyncStorage.getItem('last_notification_reprogram_date');
+                    
                     if (lastReprogramDate !== today) {
                       console.log('[Notifications] Notification quotidienne reçue, reprogrammation pour demain...');
-                      lastReprogramDate = today;
-                      await NotificationService.scheduleDailyNotification(h, m);
+                      await AsyncStorage.setItem('last_notification_reprogram_date', today);
+                      // Ne pas forcer demain ici car la notification vient d'être reçue, donc on programme normalement
+                      await NotificationService.scheduleDailyNotification(h, m, false);
                     } else {
                       console.log('[Notifications] Reprogrammation déjà effectuée aujourd\'hui, ignorée');
                     }
@@ -74,6 +109,7 @@ export default function App() {
               console.error('[Notifications] Erreur lors de la reprogrammation:', error);
             }
           });
+          */
         }
       } catch (error) {
         console.error('Erreur lors de la configuration des notifications:', error);

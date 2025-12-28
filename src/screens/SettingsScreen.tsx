@@ -61,18 +61,50 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     loadData();
   }, []);
 
-  // Recharger et reprogrammer les notifications quand l'utilisateur revient sur cet écran
+  // CODE COMMENTÉ : Ne plus programmer de notifications à chaque affichage de l'écran
+  // Les notifications sont maintenant gérées uniquement au démarrage de l'app et après réception
+  /*
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', async () => {
-      // Si les notifications sont activées, s'assurer qu'elles sont bien programmées
+      // Toujours vérifier que la notification est programmée à 20h
+      try {
+        const enabled = await AsyncStorage.getItem('notifications_enabled');
+        if (enabled === 'true') {
+          const scheduled = await NotificationService.getScheduledNotifications();
+          if (scheduled.length === 0) {
+            // Si aucune notification n'est programmée, en programmer une à 20h
+            console.log('[Settings] Aucune notification programmée, programmation automatique à 20h...');
+            await NotificationService.scheduleDailyNotification(20, 0, false);
+          }
+        }
+      } catch (error) {
+        console.error('Erreur lors de la reprogrammation des notifications:', error);
+      }
+    });
+    return unsubscribe;
+  }, [navigation]);
+  */
+
+  // CODE COMMENTÉ : Ancien système avec vérification de l'heure configurée
+  /*
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', async () => {
+      // Si les notifications sont activées, vérifier qu'elles sont bien programmées
       if (notificationsEnabled) {
         try {
           const time = await AsyncStorage.getItem('daily_reminder_time');
           if (time) {
             const [h, m] = time.split(':').map(Number);
             if (!Number.isNaN(h) && !Number.isNaN(m)) {
-              // Reprogrammer les notifications pour maintenir 30 jours à l'avance
-              await NotificationService.scheduleDailyNotification(h, m);
+              // Vérifier si une notification est déjà programmée
+              const scheduled = await NotificationService.getScheduledNotifications();
+              if (scheduled.length === 0) {
+                // Si aucune notification n'est programmée, en programmer une (sans forcer demain)
+                console.log('[Settings] Aucune notification programmée, reprogrammation...');
+                await NotificationService.scheduleDailyNotification(h, m, false);
+              } else {
+                console.log('[Settings] Notification déjà programmée, pas de reprogrammation');
+              }
             }
           }
         } catch (error) {
@@ -82,23 +114,59 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     });
     return unsubscribe;
   }, [navigation, notificationsEnabled]);
+  */
 
   const loadData = async () => {
     try {
+      // NOTIFICATIONS AUTOMATIQUES À 20H : Initialiser automatiquement les notifications
+      // Les paramètres sont masqués, mais on initialise quand même les notifications à 20h
+      const enabled = await AsyncStorage.getItem('notifications_enabled');
+      if (enabled === null) {
+        // Première fois : activer les notifications et définir l'heure à 20h
+        await AsyncStorage.setItem('notifications_enabled', 'true');
+        await AsyncStorage.setItem('daily_reminder_time', '20:00');
+        setNotificationsEnabled(true);
+        setReminderHour(20);
+        setReminderMinute(0);
+        // Programmer la notification à 20h
+        await NotificationService.scheduleDailyNotification(20, 0, false);
+      } else {
+        const isEnabled = enabled === 'true';
+        setNotificationsEnabled(isEnabled);
+        // Toujours programmer à 20h (heure fixe)
+        const scheduled = await NotificationService.getScheduledNotifications();
+        if (scheduled.length === 0 && isEnabled) {
+          console.log('[Settings] Aucune notification programmée, programmation automatique à 20h...');
+          await NotificationService.scheduleDailyNotification(20, 0, false);
+        }
+        // Toujours définir l'heure à 20h
+        setReminderHour(20);
+        setReminderMinute(0);
+      }
+
+      // CODE COMMENTÉ : Ancien système avec paramètres configurables
+      /*
       // Charger paramètres notifications
       const enabled = await AsyncStorage.getItem('notifications_enabled');
       const time = await AsyncStorage.getItem('daily_reminder_time');
       if (enabled !== null) {
         const isEnabled = enabled === 'true';
         setNotificationsEnabled(isEnabled);
-        // Si les notifications sont activées, programmer la notification
+        // Si les notifications sont activées, vérifier qu'une notification est programmée
         if (isEnabled && time) {
           const [h, m] = time.split(':').map(Number);
           if (!Number.isNaN(h) && !Number.isNaN(m)) {
             setReminderHour(h);
             setReminderMinute(m);
-            // Programmer la notification avec l'heure chargée
-            await NotificationService.scheduleDailyNotification(h, m);
+            // Vérifier si une notification est déjà programmée
+            const scheduled = await NotificationService.getScheduledNotifications();
+            if (scheduled.length === 0) {
+              // Si aucune notification n'est programmée, en programmer une (sans forcer demain)
+              console.log('[Settings] Aucune notification programmée au chargement, reprogrammation...');
+              await NotificationService.scheduleDailyNotification(h, m, false);
+            } else {
+              console.log('[Settings] Notification déjà programmée au chargement');
+            }
           }
         } else if (!isEnabled) {
           // Si les notifications sont désactivées, annuler toutes les notifications
@@ -112,6 +180,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           setReminderMinute(m);
         }
       }
+      */
 
       const consumptionSetting = await AsyncStorage.getItem('detailed_consumption_enabled');
       if (consumptionSetting !== null) {
@@ -124,13 +193,16 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     }
   };
 
+  // CODE COMMENTÉ : Fonction masquée car les notifications sont maintenant automatiques à 20h
+  /*
   const handleNotificationToggle = async (enabled: boolean) => {
     setNotificationsEnabled(enabled);
     
     if (enabled) {
       await AsyncStorage.setItem('notifications_enabled', 'true');
       await AsyncStorage.setItem('daily_reminder_time', `${String(reminderHour).padStart(2,'0')}:${String(reminderMinute).padStart(2,'0')}`);
-      await NotificationService.scheduleDailyNotification(reminderHour, reminderMinute);
+      // Programmer la notification (forceTomorrow=true pour éviter les notifications immédiates si l'heure est très proche)
+      await NotificationService.scheduleDailyNotification(reminderHour, reminderMinute, true);
       // Vérifier que les notifications ont bien été programmées
       await NotificationService.getScheduledNotifications();
     } else {
@@ -138,6 +210,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       await NotificationService.cancelAllNotifications();
     }
   };
+  */
 
   const openTimePicker = () => {
     // Initialiser les valeurs temporaires avec les valeurs actuelles
@@ -153,6 +226,8 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     setShowTimeModal(false);
   };
 
+  // CODE COMMENTÉ : Fonction masquée car l'heure est maintenant fixe à 20h
+  /*
   const saveTime = async () => {
     // Utiliser les valeurs temporaires pour sauvegarder
     await AsyncStorage.setItem('daily_reminder_time', `${String(tempReminderHour).padStart(2,'0')}:${String(tempReminderMinute).padStart(2,'0')}`);
@@ -161,12 +236,14 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     setReminderMinute(tempReminderMinute);
     if (notificationsEnabled) {
       await NotificationService.cancelAllNotifications();
-      await NotificationService.scheduleDailyNotification(tempReminderHour, tempReminderMinute);
+      // Programmer la notification (forceTomorrow=true pour éviter les notifications immédiates si l'heure est très proche)
+      await NotificationService.scheduleDailyNotification(tempReminderHour, tempReminderMinute, true);
       // Vérifier que les notifications ont bien été programmées
       await NotificationService.getScheduledNotifications();
     }
     setShowTimeModal(false);
   };
+  */
 
   const handleConsumptionDetailToggle = async (enabled: boolean) => {
     setDetailedConsumptionEnabled(enabled);
@@ -302,7 +379,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             </View>
           </View>
 
-          {/* Notifications */}
+          {/* Notifications - MASQUÉ : Les notifications sont maintenant automatiques à 20h pour tout le monde */}
+          {/* Code commenté pour pouvoir réactiver la fonctionnalité plus tard */}
+          {/*
           <View style={[styles.section, { backgroundColor: colors.card }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('settings.notifications')}</Text>
             
@@ -320,7 +399,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             </View>
 
             {/* Sélection de l'heure */}
-            <TouchableOpacity style={styles.settingRow} onPress={openTimePicker} disabled={!Boolean(notificationsEnabled)}>
+            {/* <TouchableOpacity style={styles.settingRow} onPress={openTimePicker} disabled={!Boolean(notificationsEnabled)}>
               <View style={styles.settingInfo}>
                 <Text style={[styles.settingLabel, { color: colors.text }]}>{t('settings.reminderTime')}</Text>
                 <Text style={[styles.settingDescription, { color: colors.mutedText }]}>
@@ -330,6 +409,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
               <Ionicons name="time" size={22} color={notificationsEnabled ? '#4CAF50' : '#ccc'} />
             </TouchableOpacity>
           </View>
+          */}
 
           {/* Vérification quotidienne */}
           <View style={[styles.section, { backgroundColor: colors.card }]}>
@@ -373,6 +453,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
               </Text>
             </TouchableOpacity>
             
+            {/* Bouton tutoriel widget - MASQUÉ */}
+            {/* Code commenté pour pouvoir réactiver la fonctionnalité plus tard */}
+            {/*
             <TouchableOpacity 
               style={[
                 styles.actionButton, 
@@ -392,6 +475,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                 {t('settings.widgetTutorial')}
               </Text>
             </TouchableOpacity>
+            */}
             
             <TouchableOpacity 
               style={[
@@ -461,7 +545,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         </TouchableOpacity>
       </Modal>
 
-      {/* Modal choix de l'heure */}
+      {/* Modal choix de l'heure - MASQUÉ : Les notifications sont maintenant automatiques à 20h */}
+      {/* Code commenté pour pouvoir réactiver la fonctionnalité plus tard */}
+      {/*
       <Modal
         visible={Boolean(showTimeModal)}
         transparent={true}
@@ -507,6 +593,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+      */}
     </SafeAreaView>
   );
 }

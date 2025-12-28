@@ -33,7 +33,8 @@ export class NotificationService {
   private static readonly DAILY_NOTIFICATION_ID = 'daily-reminder-notification';
 
   // Programmer une notification quotidienne à une heure donnée (heure/minute en locale)
-  static async scheduleDailyNotification(hour: number = 20, minute: number = 0): Promise<void> {
+  // forceTomorrow: si true, force la programmation pour demain même si l'heure n'est pas passée
+  static async scheduleDailyNotification(hour: number = 20, minute: number = 0, forceTomorrow: boolean = false): Promise<void> {
     try {
       if (Platform.OS === 'web') {
         // Sur le web, programmer une notification simple
@@ -72,16 +73,40 @@ export class NotificationService {
         targetTime.setHours(Number(hour), Number(minute), 0, 0);
         targetTime.setMilliseconds(0);
 
-        // Si l'heure programmée est déjà passée aujourd'hui, programmer pour demain à la même heure
-        // Utiliser une marge de sécurité de 10 secondes pour éviter le déclenchement immédiat
-        // si l'utilisateur programme exactement à l'heure actuelle
-        const safetyMargin = 10 * 1000; // 10 secondes en millisecondes
-        const isTimePassed = targetTime.getTime() <= now.getTime() + safetyMargin;
+        // Marge de sécurité pour éviter les notifications immédiates (2 minutes)
+        // Si l'heure est dans les 2 prochaines minutes, programmer pour demain
+        const safetyMargin = 2 * 60 * 1000; // 2 minutes en millisecondes
         
-        if (isTimePassed) {
-          // Si l'heure est passée, programmer pour demain à la même heure
-          targetTime.setDate(targetTime.getDate() + 1);
-          console.log(`[Notifications] L'heure est passée, programmation pour demain`);
+        if (forceTomorrow) {
+          // Si forceTomorrow est true, vérifier quand même si l'heure est très proche
+          // Si l'heure est dans les 2 prochaines minutes, programmer pour demain
+          // Sinon, programmer pour aujourd'hui si l'heure n'est pas passée
+          const timeUntilTarget = targetTime.getTime() - now.getTime();
+          
+          if (timeUntilTarget <= safetyMargin) {
+            // L'heure est trop proche, programmer pour demain
+            targetTime.setDate(targetTime.getDate() + 1);
+            console.log(`[Notifications] forceTomorrow=true et heure trop proche (${Math.round(timeUntilTarget / 1000)}s), programmation pour demain`);
+          } else if (timeUntilTarget > 0) {
+            // L'heure n'est pas encore passée et n'est pas trop proche, programmer pour aujourd'hui
+            console.log(`[Notifications] forceTomorrow=true mais heure suffisamment éloignée (${Math.round(timeUntilTarget / 60000)} min), programmation pour aujourd'hui`);
+          } else {
+            // L'heure est passée, programmer pour demain
+            targetTime.setDate(targetTime.getDate() + 1);
+            console.log(`[Notifications] forceTomorrow=true et heure passée, programmation pour demain`);
+          }
+        } else {
+          // Vérifier si l'heure est passée ou trop proche (dans les 2 prochaines minutes)
+          const timeUntilTarget = targetTime.getTime() - now.getTime();
+          
+          if (timeUntilTarget <= safetyMargin) {
+            // Si l'heure est passée ou trop proche, programmer pour demain
+            targetTime.setDate(targetTime.getDate() + 1);
+            console.log(`[Notifications] L'heure est passée ou trop proche (${Math.round(timeUntilTarget / 1000)}s), programmation pour demain`);
+          } else {
+            // L'heure n'est pas encore passée et n'est pas trop proche, programmer pour aujourd'hui
+            console.log(`[Notifications] L'heure n'est pas encore passée (${Math.round(timeUntilTarget / 60000)} min restantes), programmation pour aujourd'hui`);
+          }
         }
 
         const title = await NotificationService.getDailyTitle();
@@ -238,7 +263,18 @@ export class NotificationService {
       const hasPermission = await this.requestPermissions();
       
       if (hasPermission) {
-        // Ne programme pas d'heure par défaut ici; Settings l'initialise
+        // NOTIFICATIONS AUTOMATIQUES À 20H : Programmer automatiquement à 20h
+        const enabled = await AsyncStorage.getItem('notifications_enabled');
+        if (enabled === null || enabled === 'true') {
+          // Si les notifications ne sont pas explicitement désactivées, les programmer à 20h
+          await AsyncStorage.setItem('notifications_enabled', 'true');
+          await AsyncStorage.setItem('daily_reminder_time', '20:00');
+          const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+          if (scheduled.length === 0) {
+            console.log('[Notifications] Initialisation : programmation automatique à 20h');
+            await this.scheduleDailyNotification(20, 0, false);
+          }
+        }
         console.log('Service de notifications initialisé');
         return true;
       }

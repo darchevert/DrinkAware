@@ -966,76 +966,76 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
                 <Text style={[styles.progressionSubtitle, { color: colors.mutedText }]}>
                   {t('stats.weeklyProgressionSubtitle')}
                 </Text>
-                
-                {/* Navigation */}
-                <View style={styles.weeklyNavigation}>
-                  <TouchableOpacity
-                    style={[
-                      styles.navButton,
-                      {
-                        borderColor: weeklyProgressionOffset + 7 < allWeeklyProgressionStats.length 
-                          ? colors.primary 
-                          : colors.border,
-                        backgroundColor: weeklyProgressionOffset + 7 < allWeeklyProgressionStats.length
-                          ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
-                          : (mode === 'dark' ? colors.card : '#f5f5f5'),
-                        opacity: weeklyProgressionOffset + 7 >= allWeeklyProgressionStats.length ? 0.5 : 1,
-                      },
-                    ]}
-                    onPress={() => {
-                      if (weeklyProgressionOffset + 7 < allWeeklyProgressionStats.length) {
-                        triggerSelection();
-                        setWeeklyProgressionOffset(weeklyProgressionOffset + 7);
-                      }
-                    }}
-                    disabled={weeklyProgressionOffset + 7 >= allWeeklyProgressionStats.length}
-                  >
-                    <Ionicons
-                      name="chevron-back"
-                      size={20}
-                      color={weeklyProgressionOffset + 7 < allWeeklyProgressionStats.length ? colors.primary : colors.mutedText}
-                    />
-                  </TouchableOpacity>
-                  
-                  <Text style={[styles.navLabel, { color: colors.mutedText }]}>
-                    {allWeeklyProgressionStats.length > 0 && (
-                      <>
-                        {t('stats.weeks')} {Math.max(1, allWeeklyProgressionStats.length - weeklyProgressionOffset - 6)}-{allWeeklyProgressionStats.length - weeklyProgressionOffset}
-                      </>
-                    )}
-                  </Text>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.navButton,
-                      {
-                        borderColor: weeklyProgressionOffset > 0 
-                          ? colors.primary 
-                          : colors.border,
-                        backgroundColor: weeklyProgressionOffset > 0
-                          ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
-                          : (mode === 'dark' ? colors.card : '#f5f5f5'),
-                        opacity: weeklyProgressionOffset === 0 ? 0.5 : 1,
-                      },
-                    ]}
-                    onPress={() => {
-                      if (weeklyProgressionOffset > 0) {
-                        triggerSelection();
-                        setWeeklyProgressionOffset(Math.max(0, weeklyProgressionOffset - 7));
-                      }
-                    }}
-                    disabled={weeklyProgressionOffset === 0}
-                  >
-                    <Ionicons
-                      name="chevron-forward"
-                      size={20}
-                      color={weeklyProgressionOffset > 0 ? colors.primary : colors.mutedText}
-                    />
-                  </TouchableOpacity>
-                </View>
 
                 {weeklyProgressionStats.length > 0 ? (
                   <>
+                    {/* Navigation - placée au-dessus du graphique */}
+                    <View style={styles.weeklyNavigation}>
+                      <TouchableOpacity
+                        style={[
+                          styles.navButton,
+                          {
+                            borderColor: weeklyProgressionOffset + 7 < allWeeklyProgressionStats.length 
+                              ? colors.primary 
+                              : colors.border,
+                            backgroundColor: weeklyProgressionOffset + 7 < allWeeklyProgressionStats.length
+                              ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
+                              : (mode === 'dark' ? colors.card : '#f5f5f5'),
+                            opacity: weeklyProgressionOffset + 7 >= allWeeklyProgressionStats.length ? 0.5 : 1,
+                          },
+                        ]}
+                        onPress={() => {
+                          if (weeklyProgressionOffset + 7 < allWeeklyProgressionStats.length) {
+                            triggerSelection();
+                            setWeeklyProgressionOffset(weeklyProgressionOffset + 7);
+                          }
+                        }}
+                        disabled={weeklyProgressionOffset + 7 >= allWeeklyProgressionStats.length}
+                      >
+                        <Ionicons
+                          name="chevron-back"
+                          size={20}
+                          color={weeklyProgressionOffset + 7 < allWeeklyProgressionStats.length ? colors.primary : colors.mutedText}
+                        />
+                      </TouchableOpacity>
+                      
+                      <Text style={[styles.navLabel, { color: colors.mutedText }]}>
+                        {allWeeklyProgressionStats.length > 0 && (
+                          <>
+                            {t('stats.weeks')} {Math.max(1, allWeeklyProgressionStats.length - weeklyProgressionOffset - 6)}-{allWeeklyProgressionStats.length - weeklyProgressionOffset}
+                          </>
+                        )}
+                      </Text>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.navButton,
+                          {
+                            borderColor: weeklyProgressionOffset > 0 
+                              ? colors.primary 
+                              : colors.border,
+                            backgroundColor: weeklyProgressionOffset > 0
+                              ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
+                              : (mode === 'dark' ? colors.card : '#f5f5f5'),
+                            opacity: weeklyProgressionOffset === 0 ? 0.5 : 1,
+                          },
+                        ]}
+                        onPress={() => {
+                          if (weeklyProgressionOffset > 0) {
+                            triggerSelection();
+                            setWeeklyProgressionOffset(Math.max(0, weeklyProgressionOffset - 7));
+                          }
+                        }}
+                        disabled={weeklyProgressionOffset === 0}
+                      >
+                        <Ionicons
+                          name="chevron-forward"
+                          size={20}
+                          color={weeklyProgressionOffset > 0 ? colors.primary : colors.mutedText}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    
                     <LineChart
                       data={weeklyProgressionStats.map(w => ({
                         label: w.week,
@@ -1046,6 +1046,7 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
                       showDots={true}
                       showGrid={true}
                     />
+                    
                     <View style={styles.progressionStats}>
                       <View style={styles.progressionStatItem}>
                         <Text style={[styles.progressionStatLabel, { color: colors.mutedText }]}>
@@ -1079,76 +1080,76 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
                 <Text style={[styles.progressionSubtitle, { color: colors.mutedText }]}>
                   {t('stats.monthlyProgressionSubtitle')}
                 </Text>
-                
-                {/* Navigation */}
-                <View style={styles.weeklyNavigation}>
-                  <TouchableOpacity
-                    style={[
-                      styles.navButton,
-                      {
-                        borderColor: monthlyProgressionOffset + 6 < monthlyProgressionStats.length 
-                          ? colors.primary 
-                          : colors.border,
-                        backgroundColor: monthlyProgressionOffset + 6 < monthlyProgressionStats.length
-                          ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
-                          : (mode === 'dark' ? colors.card : '#f5f5f5'),
-                        opacity: monthlyProgressionOffset + 6 >= monthlyProgressionStats.length ? 0.5 : 1,
-                      },
-                    ]}
-                    onPress={() => {
-                      if (monthlyProgressionOffset + 6 < monthlyProgressionStats.length) {
-                        triggerSelection();
-                        setMonthlyProgressionOffset(monthlyProgressionOffset + 6);
-                      }
-                    }}
-                    disabled={monthlyProgressionOffset + 6 >= monthlyProgressionStats.length}
-                  >
-                    <Ionicons
-                      name="chevron-back"
-                      size={20}
-                      color={monthlyProgressionOffset + 6 < monthlyProgressionStats.length ? colors.primary : colors.mutedText}
-                    />
-                  </TouchableOpacity>
-                  
-                  <Text style={[styles.navLabel, { color: colors.mutedText }]}>
-                    {monthlyProgressionStats.length > 0 && (
-                      <>
-                        {t('stats.months')} {Math.max(1, monthlyProgressionStats.length - monthlyProgressionOffset - 5)}-{monthlyProgressionStats.length - monthlyProgressionOffset}
-                      </>
-                    )}
-                  </Text>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.navButton,
-                      {
-                        borderColor: monthlyProgressionOffset > 0 
-                          ? colors.primary 
-                          : colors.border,
-                        backgroundColor: monthlyProgressionOffset > 0
-                          ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
-                          : (mode === 'dark' ? colors.card : '#f5f5f5'),
-                        opacity: monthlyProgressionOffset === 0 ? 0.5 : 1,
-                      },
-                    ]}
-                    onPress={() => {
-                      if (monthlyProgressionOffset > 0) {
-                        triggerSelection();
-                        setMonthlyProgressionOffset(Math.max(0, monthlyProgressionOffset - 6));
-                      }
-                    }}
-                    disabled={monthlyProgressionOffset === 0}
-                  >
-                    <Ionicons
-                      name="chevron-forward"
-                      size={20}
-                      color={monthlyProgressionOffset > 0 ? colors.primary : colors.mutedText}
-                    />
-                  </TouchableOpacity>
-                </View>
 
                 {monthlyProgressionStatsDisplay.length > 0 ? (
                   <>
+                    {/* Navigation - placée au-dessus du graphique */}
+                    <View style={styles.weeklyNavigation}>
+                      <TouchableOpacity
+                        style={[
+                          styles.navButton,
+                          {
+                            borderColor: monthlyProgressionOffset + 6 < monthlyProgressionStats.length 
+                              ? colors.primary 
+                              : colors.border,
+                            backgroundColor: monthlyProgressionOffset + 6 < monthlyProgressionStats.length
+                              ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
+                              : (mode === 'dark' ? colors.card : '#f5f5f5'),
+                            opacity: monthlyProgressionOffset + 6 >= monthlyProgressionStats.length ? 0.5 : 1,
+                          },
+                        ]}
+                        onPress={() => {
+                          if (monthlyProgressionOffset + 6 < monthlyProgressionStats.length) {
+                            triggerSelection();
+                            setMonthlyProgressionOffset(monthlyProgressionOffset + 6);
+                          }
+                        }}
+                        disabled={monthlyProgressionOffset + 6 >= monthlyProgressionStats.length}
+                      >
+                        <Ionicons
+                          name="chevron-back"
+                          size={20}
+                          color={monthlyProgressionOffset + 6 < monthlyProgressionStats.length ? colors.primary : colors.mutedText}
+                        />
+                      </TouchableOpacity>
+                      
+                      <Text style={[styles.navLabel, { color: colors.mutedText }]}>
+                        {monthlyProgressionStats.length > 0 && (
+                          <>
+                            {t('stats.months')} {Math.max(1, monthlyProgressionStats.length - monthlyProgressionOffset - 5)}-{monthlyProgressionStats.length - monthlyProgressionOffset}
+                          </>
+                        )}
+                      </Text>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.navButton,
+                          {
+                            borderColor: monthlyProgressionOffset > 0 
+                              ? colors.primary 
+                              : colors.border,
+                            backgroundColor: monthlyProgressionOffset > 0
+                              ? (mode === 'dark' ? colors.primary + '20' : '#f1f8e9')
+                              : (mode === 'dark' ? colors.card : '#f5f5f5'),
+                            opacity: monthlyProgressionOffset === 0 ? 0.5 : 1,
+                          },
+                        ]}
+                        onPress={() => {
+                          if (monthlyProgressionOffset > 0) {
+                            triggerSelection();
+                            setMonthlyProgressionOffset(Math.max(0, monthlyProgressionOffset - 6));
+                          }
+                        }}
+                        disabled={monthlyProgressionOffset === 0}
+                      >
+                        <Ionicons
+                          name="chevron-forward"
+                          size={20}
+                          color={monthlyProgressionOffset > 0 ? colors.primary : colors.mutedText}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    
                     <LineChart
                       data={monthlyProgressionStatsDisplay.map(m => ({
                         label: m.month,
@@ -1159,6 +1160,7 @@ export default function StatsScreen({ navigation }: StatsScreenProps) {
                       showDots={true}
                       showGrid={true}
                     />
+                    
                     <View style={styles.progressionStats}>
                       <View style={styles.progressionStatItem}>
                         <Text style={[styles.progressionStatLabel, { color: colors.mutedText }]}>
@@ -1835,6 +1837,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 8,
     marginBottom: 16,
     paddingHorizontal: 8,
   },
